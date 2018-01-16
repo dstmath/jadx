@@ -14,7 +14,7 @@
 
 Command line and GUI tools for produce Java source code from Android Dex and Apk files
 
-![jadx-gui screenshot](http://skylot.github.io/jadx/jadx-gui.png)
+![jadx-gui screenshot](https://i.imgur.com/h917IBZ.png)
 
 
 ### Downloads
@@ -55,6 +55,7 @@ options:
  -s, --no-src               - do not decompile source code
  -e, --export-gradle        - save as android gradle project
      --show-bad-code        - show inconsistent code (incorrectly decompiled)
+     --no-imports           - disable use of imports, always write entire package name
      --no-replace-consts    - don't replace constant value with matching constant field
      --escape-unicode       - escape non latin characters in strings (with \u)
      --deobf                - activate deobfuscation
