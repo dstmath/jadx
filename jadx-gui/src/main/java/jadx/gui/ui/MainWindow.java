@@ -27,8 +27,6 @@ import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,6 +39,7 @@ import jadx.gui.jobs.IndexJob;
 import jadx.gui.settings.JadxSettings;
 import jadx.gui.settings.JadxSettingsWindow;
 import jadx.gui.treemodel.JClass;
+import jadx.gui.treemodel.JLoadableNode;
 import jadx.gui.treemodel.JNode;
 import jadx.gui.treemodel.JResource;
 import jadx.gui.treemodel.JRoot;
@@ -500,12 +499,7 @@ public class MainWindow extends JFrame {
 
 		flatPkgButton = new JToggleButton(ICON_FLAT_PKG);
 		flatPkgButton.setSelected(isFlattenPackage);
-		ActionListener flatPkgAction = new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				toggleFlattenPackage();
-			}
-		};
+		ActionListener flatPkgAction = e -> toggleFlattenPackage();
 		flatPkgMenuItem.addActionListener(flatPkgAction);
 		flatPkgButton.addActionListener(flatPkgAction);
 		flatPkgButton.setToolTipText(NLS.str("menu.flatten"));
@@ -567,8 +561,8 @@ public class MainWindow extends JFrame {
 		tree.setCellRenderer(new DefaultTreeCellRenderer() {
 			@Override
 			public Component getTreeCellRendererComponent(JTree tree,
-					Object value, boolean selected, boolean expanded,
-					boolean isLeaf, int row, boolean focused) {
+			                                              Object value, boolean selected, boolean expanded,
+			                                              boolean isLeaf, int row, boolean focused) {
 				Component c = super.getTreeCellRendererComponent(tree, value, selected, expanded, isLeaf, row, focused);
 				if (value instanceof JNode) {
 					setIcon(((JNode) value).getIcon());
@@ -581,9 +575,8 @@ public class MainWindow extends JFrame {
 			public void treeWillExpand(TreeExpansionEvent event) throws ExpandVetoException {
 				TreePath path = event.getPath();
 				Object node = path.getLastPathComponent();
-				if (node instanceof JClass) {
-					JClass cls = (JClass) node;
-					cls.getRootClass().load();
+				if (node instanceof JLoadableNode) {
+					((JLoadableNode) node).loadNode();
 				}
 			}
 
@@ -660,7 +653,7 @@ public class MainWindow extends JFrame {
 		}
 
 		@Override
-		public void menuSelected(MenuEvent e) {
+		public void menuSelected(MenuEvent menuEvent) {
 			recentFiles.removeAll();
 			File openFile = wrapper.getOpenFile();
 			String currentFile = openFile == null ? "" : openFile.getAbsolutePath();
@@ -670,12 +663,7 @@ public class MainWindow extends JFrame {
 				}
 				JMenuItem menuItem = new JMenuItem(file);
 				recentFiles.add(menuItem);
-				menuItem.addActionListener(new ActionListener() {
-					@Override
-					public void actionPerformed(ActionEvent e) {
-						openFile(new File(file));
-					}
-				});
+				menuItem.addActionListener(e -> openFile(new File(file)));
 			}
 			if (recentFiles.getItemCount() == 0) {
 				recentFiles.add(new JMenuItem(NLS.str("menu.no_recent_files")));
