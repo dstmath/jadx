@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +42,7 @@ public class BinaryXMLParser extends CommonBinaryParser {
 	private final Map<Integer, FieldNode> localStyleMap = new HashMap<>();
 	private final Map<Integer, String> resNames;
 	private final Map<String, String> nsMap = new HashMap<>();
+	private Set<String> nsMapGenerated;
 
 	private CodeWriter writer;
 	private String[] strings;
@@ -86,6 +89,7 @@ public class BinaryXMLParser extends CommonBinaryParser {
 		if (!isBinaryXml()) {
 			return ResourcesLoader.loadToCodeWriter(inputStream);
 		}
+		nsMapGenerated = new HashSet<>();
 		writer = new CodeWriter();
 		writer.add("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
 		firstElement = true;
@@ -170,7 +174,11 @@ public class BinaryXMLParser extends CommonBinaryParser {
 		int comment = is.readInt32();
 		int beginPrefix = is.readInt32();
 		int beginURI = is.readInt32();
-		nsMap.computeIfAbsent(getString(beginURI), k -> getString(beginPrefix));
+		
+		String nsValue = getString(beginPrefix);
+		if(!nsMap.containsValue(nsValue)) {
+			nsMap.putIfAbsent(getString(beginURI), nsValue);
+		}
 		namespaceDepth++;
 	}
 
@@ -186,7 +194,11 @@ public class BinaryXMLParser extends CommonBinaryParser {
 		int endPrefix = is.readInt32();
 		int endURI = is.readInt32();
 		namespaceDepth--;
-		nsMap.computeIfAbsent(getString(endURI), k -> getString(endPrefix));
+		
+		String nsValue = getString(endPrefix);
+		if(!nsMap.containsValue(nsValue)) {
+			nsMap.putIfAbsent(getString(endURI), nsValue);
+		}
 	}
 
 	private void parseCData() throws IOException {
@@ -309,9 +321,23 @@ public class BinaryXMLParser extends CommonBinaryParser {
 		}
 		String attrName = nsMap.get(attrUrl);
 		if (attrName == null) {
-			return "NOT_FOUND_NS_0x" + Integer.toHexString(attributeNS) + "_" + attrUrl;
+			attrName = generateNameForNS(attrUrl);
 		}
 		return attrName;
+	}
+	
+	private String generateNameForNS(String attrUrl) {
+		for(int i = 1; ; i++) {
+			String attrName = "ns" + i;
+			if(!nsMap.containsValue(attrName) && !nsMapGenerated.contains(attrName)) {
+				nsMapGenerated.add(attrName);
+				// do not add generated value to nsMap
+				// because attrUrl might be used in a neighbor element, but never defined
+				writer.add("xmlns:").add(attrName)
+					.add("=\"").add(attrUrl).add("\" ");
+				return attrName;
+			}
+		}
 	}
 
 	private String getAttributeName(int id) {
