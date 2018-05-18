@@ -190,6 +190,10 @@ public class DexNode implements IDexNode {
 		return dexBuf.open(offset);
 	}
 
+	public boolean checkOffset(int dataOffset) {
+		return dataOffset >= 0 && dataOffset < dexBuf.getLength();
+	}
+
 	@Override
 	public RootNode root() {
 		return root;
@@ -206,6 +210,7 @@ public class DexNode implements IDexNode {
 
 	@Override
 	public String toString() {
-		return "DEX";
+		return "DEX: " + file;
 	}
+
 }
