@@ -47,7 +47,6 @@ public class IfNode extends GotoNode {
 		BlockNode tmp = thenBlock;
 		thenBlock = elseBlock;
 		elseBlock = tmp;
-		target = thenBlock.getStartOffset();
 	}
 
 	public void changeCondition(IfOp op, InsnArg arg1, InsnArg arg2) {
@@ -68,15 +67,16 @@ public class IfNode extends GotoNode {
 
 	@Override
 	public boolean replaceTargetBlock(BlockNode origin, BlockNode replace) {
+		boolean replaced = false;
 		if (thenBlock == origin) {
 			thenBlock = replace;
-			return true;
+			replaced = true;
 		}
 		if (elseBlock == origin) {
 			elseBlock = replace;
-			return true;
+			replaced = true;
 		}
-		return false;
+		return replaced;
 	}
 
 	public BlockNode getThenBlock() {
@@ -85,6 +85,11 @@ public class IfNode extends GotoNode {
 
 	public BlockNode getElseBlock() {
 		return elseBlock;
+	}
+
+	@Override
+	public int getTarget() {
+		return thenBlock == null ? target : thenBlock.getStartOffset();
 	}
 
 	@Override

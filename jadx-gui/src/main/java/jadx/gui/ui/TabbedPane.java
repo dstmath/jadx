@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import jadx.gui.treemodel.JCertificate;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,7 +42,7 @@ class TabbedPane extends JTabbedPane {
 	private transient JumpManager jumps = new JumpManager();
 
 	TabbedPane(MainWindow window) {
-		mainWindow = window;
+		this.mainWindow = window;
 
 		setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
 
@@ -102,6 +103,20 @@ class TabbedPane extends JTabbedPane {
 			}
 		});
 	}
+
+	public void showCertificate(JCertificate cert) {
+		final ContentPanel contentPanel = getContentPanel(cert);
+		if (contentPanel == null) {
+			return;
+		}
+		SwingUtilities.invokeLater(new Runnable() {
+			@Override
+			public void run() {
+				setSelectedComponent(contentPanel);
+			}
+		});
+	}
+
 
 	public void codeJump(Position pos) {
 		Position curPos = getCurrentPosition();
@@ -172,6 +187,11 @@ class TabbedPane extends JTabbedPane {
 				return null;
 			}
 		}
+		if(node instanceof JCertificate)
+		{
+			return new CertificatePanel(this,node);
+		}
+
 		return new CodePanel(this, node);
 	}
 

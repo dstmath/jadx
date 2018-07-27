@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
 import jadx.gui.settings.JadxSettings;
 import jadx.gui.settings.JadxSettingsAdapter;
 import jadx.gui.ui.MainWindow;
-import jadx.gui.utils.LogCollector;
+import jadx.gui.utils.logs.LogCollector;
 
 public class JadxGUI {
 	private static final Logger LOG = LoggerFactory.getLogger(JadxGUI.class);
@@ -21,15 +21,27 @@ public class JadxGUI {
 			if (!settings.processArgs(args)) {
 				return;
 			}
-			UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-			SwingUtilities.invokeLater(() -> {
-				MainWindow window = new MainWindow(settings);
-				window.open();
-			});
+			if (!tryDefaultLookAndFeel()) {
+				UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+			}
+			SwingUtilities.invokeLater(new MainWindow(settings)::open);
 		} catch (Exception e) {
 			LOG.error("Error: {}", e.getMessage(), e);
 			System.exit(1);
 		}
+	}
+
+	private static boolean tryDefaultLookAndFeel() {
+		String defLaf = System.getProperty("swing.defaultlaf");
+		if (defLaf != null) {
+			try {
+				UIManager.setLookAndFeel(defLaf);
+				return true;
+			} catch (Exception e) {
+				LOG.error("Failed to set default laf: {}", defLaf, e);
+			}
+		}
+		return false;
 	}
 }
 

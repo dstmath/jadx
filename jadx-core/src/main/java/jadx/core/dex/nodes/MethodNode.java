@@ -152,8 +152,12 @@ public class MethodNode extends LineAttrNode implements ILoadable, IDexNode {
 		}
 		instructions = null;
 		blocks = null;
+		enterBlock = null;
 		exitBlocks = null;
 		exceptionHandlers.clear();
+		sVars.clear();
+		region = null;
+		loops.clear();
 	}
 
 	private boolean parseSignature() {
@@ -403,14 +407,20 @@ public class MethodNode extends LineAttrNode implements ILoadable, IDexNode {
 	}
 
 	public void finishBasicBlocks() {
-		((ArrayList<BlockNode>) blocks).trimToSize();
-		((ArrayList<BlockNode>) exitBlocks).trimToSize();
+		trimList(blocks);
+		trimList(exitBlocks);
 
 		blocks = Collections.unmodifiableList(blocks);
 		exitBlocks = Collections.unmodifiableList(exitBlocks);
 
 		for (BlockNode block : blocks) {
 			block.lock();
+		}
+	}
+
+	private void trimList(List<BlockNode> blocks) {
+		if (blocks instanceof ArrayList) {
+			((ArrayList<BlockNode>)blocks).trimToSize();
 		}
 	}
 

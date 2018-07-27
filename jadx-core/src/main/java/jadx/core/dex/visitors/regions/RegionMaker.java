@@ -12,7 +12,6 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import jadx.core.Consts;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.AType;
 import jadx.core.dex.attributes.nodes.EdgeInsnAttr;
@@ -43,7 +42,7 @@ import jadx.core.utils.BlockUtils;
 import jadx.core.utils.ErrorsCounter;
 import jadx.core.utils.InstructionRemover;
 import jadx.core.utils.RegionUtils;
-import jadx.core.utils.exceptions.JadxOverflowException;
+import jadx.core.utils.exceptions.JadxRuntimeException;
 
 import static jadx.core.dex.visitors.regions.IfMakerHelper.confirmMerge;
 import static jadx.core.dex.visitors.regions.IfMakerHelper.makeIfInfo;
@@ -60,35 +59,31 @@ public class RegionMaker {
 	private static final int REGIONS_LIMIT = 1000 * 1000;
 
 	private final MethodNode mth;
-	private BitSet processedBlocks;
 	private int regionsCount;
+	private Region[] regionByBlock;
 
 	public RegionMaker(MethodNode mth) {
 		this.mth = mth;
-		if (Consts.DEBUG) {
-			this.processedBlocks = new BitSet(mth.getBasicBlocks().size());
-		}
+		this.regionByBlock = new Region[mth.getBasicBlocks().size()];
 	}
 
 	public Region makeRegion(BlockNode startBlock, RegionStack stack) {
-		if (Consts.DEBUG) {
-			int id = startBlock.getId();
-			if (processedBlocks.get(id)) {
-				LOG.debug(" Block already processed: {}, mth: {}", startBlock, mth);
-			} else {
-				processedBlocks.set(id);
-			}
-		}
-		regionsCount++;
-		if (regionsCount > REGIONS_LIMIT) {
-			throw new JadxOverflowException("Regions count limit reached");
+		int startBlockId = startBlock.getId();
+		Region region = regionByBlock[startBlockId];
+		if (region != null) {
+			return region;
 		}
 
 		Region r = new Region(stack.peekRegion());
 		BlockNode next = startBlock;
 		while (next != null) {
 			next = traverse(r, next, stack);
+			regionsCount++;
+			if (regionsCount > REGIONS_LIMIT) {
+				throw new JadxRuntimeException("Regions count limit reached");
+			}
 		}
+		regionByBlock[startBlockId] = r;
 		return r;
 	}
 

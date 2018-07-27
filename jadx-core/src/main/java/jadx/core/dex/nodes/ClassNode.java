@@ -39,6 +39,8 @@ import jadx.core.dex.nodes.parser.StaticValuesParser;
 import jadx.core.utils.exceptions.DecodeException;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
+import static jadx.core.dex.nodes.ProcessState.UNLOADED;
+
 public class ClassNode extends LineAttrNode implements ILoadable, IDexNode {
 	private static final Logger LOG = LoggerFactory.getLogger(ClassNode.class);
 
@@ -190,23 +192,23 @@ public class ClassNode extends LineAttrNode implements ILoadable, IDexNode {
 					break;
 				}
 			}
-		} catch (JadxRuntimeException e) {
+		} catch (Exception e) {
 			LOG.error("Class signature parse error: {}", this, e);
 		}
 	}
 
 	private void setFieldsTypesFromSignature() {
 		for (FieldNode field : fields) {
-			SignatureParser sp = SignatureParser.fromNode(field);
-			if (sp != null) {
-				try {
+			try {
+				SignatureParser sp = SignatureParser.fromNode(field);
+				if (sp != null) {
 					ArgType gType = sp.consumeType();
 					if (gType != null) {
 						field.setType(gType);
 					}
-				} catch (JadxRuntimeException e) {
-					LOG.error("Field signature parse error: {}", field, e);
 				}
+			} catch (Exception e) {
+				LOG.error("Field signature parse error: {}.{}", this.getFullName(), field.getName(), e);
 			}
 		}
 	}
@@ -238,7 +240,6 @@ public class ClassNode extends LineAttrNode implements ILoadable, IDexNode {
 			}
 		}
 		this.addAttr(new SourceFileAttr(fileName));
-		LOG.debug("Class '{}' compiled from '{}'", this, fileName);
 	}
 
 	@Override
@@ -264,6 +265,7 @@ public class ClassNode extends LineAttrNode implements ILoadable, IDexNode {
 		for (ClassNode innerCls : getInnerClasses()) {
 			innerCls.unload();
 		}
+		setState(UNLOADED);
 	}
 
 	private void buildCache() {
@@ -483,7 +485,6 @@ public class ClassNode extends LineAttrNode implements ILoadable, IDexNode {
 			return clsInfo.equals(other.clsInfo);
 		}
 		return false;
-
 	}
 
 	@Override
