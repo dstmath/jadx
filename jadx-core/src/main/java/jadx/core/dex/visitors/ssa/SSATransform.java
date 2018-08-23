@@ -53,6 +53,7 @@ public class SSATransform extends AbstractVisitor {
 
 		fixLastAssignInTry(mth);
 		removeBlockerInsns(mth);
+		markThisArgs(mth.getThisArg());
 
 		boolean repeatFix;
 		int k = 0;
@@ -404,5 +405,32 @@ public class SSATransform extends AbstractVisitor {
 		}
 		InstructionRemover.unbindInsn(mth, phi);
 		return true;
+	}
+
+	private static void markThisArgs(RegisterArg thisArg) {
+		if (thisArg != null) {
+			markOneArgAsThis(thisArg);
+			thisArg.getSVar().getUseList().forEach(SSATransform::markOneArgAsThis);
+		}
+	}
+
+	private static void markOneArgAsThis(RegisterArg arg) {
+		if (arg == null) {
+			return;
+		}
+		arg.add(AFlag.THIS);
+		arg.setName(RegisterArg.THIS_ARG_NAME);
+		// mark all moved 'this'
+		InsnNode parentInsn = arg.getParentInsn();
+		if (parentInsn != null
+				&& parentInsn.getType() == InsnType.MOVE
+				&& parentInsn.getArg(0) == arg) {
+			RegisterArg resArg = parentInsn.getResult();
+			if (resArg.getRegNum() != arg.getRegNum()
+					&& !resArg.getSVar().isUsedInPhi()) {
+				markThisArgs(resArg);
+				parentInsn.add(AFlag.SKIP);
+			}
+		}
 	}
 }

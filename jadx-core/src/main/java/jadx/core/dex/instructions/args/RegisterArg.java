@@ -12,6 +12,8 @@ import jadx.core.utils.InsnUtils;
 
 public class RegisterArg extends InsnArg implements Named {
 
+	public static final String THIS_ARG_NAME = "this";
+
 	protected final int regNum;
 	// not null after SSATransform pass
 	private SSAVar sVar;
@@ -43,6 +45,9 @@ public class RegisterArg extends InsnArg implements Named {
 	}
 
 	public String getName() {
+		if (isThis()) {
+			return THIS_ARG_NAME;
+		}
 		if (sVar == null) {
 			return null;
 		}
@@ -116,22 +121,6 @@ public class RegisterArg extends InsnArg implements Named {
 		return InsnUtils.getConstValueByInsn(dex, parInsn);
 	}
 
-	@Override
-	public boolean isThis() {
-		if ("this".equals(getName())) {
-			return true;
-		}
-		// maybe it was moved from 'this' register
-		InsnNode ai = getAssignInsn();
-		if (ai != null && ai.getType() == InsnType.MOVE) {
-			InsnArg arg = ai.getArg(0);
-			if (arg != this) {
-				return arg.isThis();
-			}
-		}
-		return false;
-	}
-
 	public InsnNode getAssignInsn() {
 		if (sVar == null) {
 			return null;
@@ -157,7 +146,7 @@ public class RegisterArg extends InsnArg implements Named {
 
 	@Override
 	public int hashCode() {
-		return regNum * 31 + type.hashCode();
+		return regNum;
 	}
 
 	@Override
@@ -187,6 +176,9 @@ public class RegisterArg extends InsnArg implements Named {
 		}
 		sb.append(" ");
 		sb.append(type);
+		if (!isAttrStorageEmpty()) {
+			sb.append(' ').append(getAttributesString());
+		}
 		sb.append(")");
 		return sb.toString();
 	}

@@ -16,6 +16,8 @@ import org.slf4j.LoggerFactory;
 import jadx.api.JadxArgs;
 import jadx.cli.JadxCLIArgs;
 import jadx.gui.ui.CodeArea;
+import jadx.gui.utils.LangLocale;
+import jadx.gui.utils.NLS;
 
 import static jadx.gui.utils.Utils.FONT_HACK;
 
@@ -24,7 +26,7 @@ public class JadxSettings extends JadxCLIArgs {
 
 	private static final String USER_HOME = System.getProperty("user.home");
 	private static final int RECENT_FILES_COUNT = 15;
-	private static final int CURRENT_SETTINGS_VERSION = 2;
+	private static final int CURRENT_SETTINGS_VERSION = 4;
 
 	private static final Font DEFAULT_FONT = FONT_HACK != null ? FONT_HACK : new RSyntaxTextArea().getFont();
 
@@ -38,6 +40,7 @@ public class JadxSettings extends JadxCLIArgs {
 	private List<String> recentFiles = new ArrayList<>();
 	private String fontStr = "";
 	private String editorThemePath = "";
+	private LangLocale langLocale = NLS.defaultLocale();
 	private boolean autoStartJobs = false;
 
 	private int settingsVersion = 0;
@@ -54,6 +57,12 @@ public class JadxSettings extends JadxCLIArgs {
 	public void fixOnLoad() {
 		if (threadsCount <= 0) {
 			threadsCount = JadxArgs.DEFAULT_THREADS_COUNT;
+		}
+		if (deobfuscationMinLength < 0) {
+			deobfuscationMinLength = 0;
+		}
+		if (deobfuscationMaxLength < 0) {
+			deobfuscationMaxLength = 0;
 		}
 		if (settingsVersion != CURRENT_SETTINGS_VERSION) {
 			upgradeSettings(settingsVersion);
@@ -149,6 +158,14 @@ public class JadxSettings extends JadxCLIArgs {
 		this.showInconsistentCode = showInconsistentCode;
 	}
 
+	public LangLocale getLangLocale(){
+		return this.langLocale;
+	}
+
+	public void setLangLocale(LangLocale langLocale) {
+		this.langLocale = langLocale;
+	}
+
 	public void setCfgOutput(boolean cfgOutput) {
 		this.cfgOutput = cfgOutput;
 	}
@@ -236,7 +253,7 @@ public class JadxSettings extends JadxCLIArgs {
 	private void upgradeSettings(int fromVersion) {
 		LOG.debug("upgrade settings from version: {} to {}", fromVersion, CURRENT_SETTINGS_VERSION);
 		if (fromVersion == 0) {
-			setDeobfuscationMinLength(4);
+			setDeobfuscationMinLength(3);
 			setDeobfuscationUseSourceNameAsAlias(true);
 			setDeobfuscationForceSave(true);
 			setThreadsCount(1);
@@ -247,6 +264,16 @@ public class JadxSettings extends JadxCLIArgs {
 		}
 		if (fromVersion == 1) {
 			setEditorThemePath(CodeArea.getAllThemes()[0].getPath());
+			fromVersion++;
+		}
+		if (fromVersion == 2) {
+			if (getDeobfuscationMinLength() == 4) {
+				setDeobfuscationMinLength(3);
+			}
+			fromVersion++;
+		}
+		if (fromVersion == 3) {
+			setLangLocale(NLS.defaultLocale());
 		}
 		settingsVersion = CURRENT_SETTINGS_VERSION;
 		sync();

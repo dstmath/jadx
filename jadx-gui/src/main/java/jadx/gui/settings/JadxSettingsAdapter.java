@@ -46,10 +46,11 @@ public class JadxSettingsAdapter {
 			String jsonSettings = PREFS.get(JADX_GUI_KEY, "");
 			JadxSettings settings = fromString(jsonSettings);
 			if (settings == null) {
-				return new JadxSettings();
+				LOG.debug("Created new settings.");
+				settings = new JadxSettings();
 			}
-			LOG.debug("Loaded settings: {}", makeString(settings));
 			settings.fixOnLoad();
+			LOG.debug("Loaded settings: {}", makeString(settings));
 			return settings;
 		} catch (Exception e) {
 			LOG.error("Error load settings", e);
@@ -81,11 +82,8 @@ public class JadxSettingsAdapter {
 	}
 
 	private static <T> void populate(GsonBuilder builder, String json, Class<T> type, final T into) {
-		builder.registerTypeAdapter(type, new InstanceCreator<T>() {
-			@Override
-			public T createInstance(Type t) {
-				return into;
-			}
-		}).create().fromJson(json, type);
+		builder.registerTypeAdapter(type, (InstanceCreator<T>) t -> into)
+						.create()
+						.fromJson(json, type);
 	}
 }
