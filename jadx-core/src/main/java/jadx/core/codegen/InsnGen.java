@@ -224,7 +224,7 @@ public class InsnGen {
 					code.add(';');
 				}
 			}
-		} catch (Throwable th) {
+		} catch (Exception th) {
 			throw new CodegenException(mth, "Error generate insn: " + insn, th);
 		}
 		return true;
@@ -580,7 +580,7 @@ public class InsnGen {
 		// anonymous class construction
 		if (cls.contains(AFlag.DONT_GENERATE)) {
 			code.add("/* anonymous class already generated */");
-			ErrorsCounter.methodError(mth, "Anonymous class already generated: " + cls);
+			ErrorsCounter.methodWarn(mth, "Anonymous class already generated: " + cls);
 			return;
 		}
 		ArgType parent;
@@ -659,7 +659,7 @@ public class InsnGen {
 	}
 
 	void generateMethodArguments(CodeWriter code, InsnNode insn, int startArgNum,
-			@Nullable MethodNode callMth) throws CodegenException {
+	                             @Nullable MethodNode callMth) throws CodegenException {
 		int k = startArgNum;
 		if (callMth != null && callMth.contains(AFlag.SKIP_FIRST_ARG)) {
 			k++;

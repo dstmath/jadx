@@ -18,6 +18,8 @@ import jadx.core.dex.attributes.AType;
 import jadx.core.dex.attributes.AttrNode;
 import jadx.core.dex.attributes.nodes.EnumClassAttr;
 import jadx.core.dex.attributes.nodes.EnumClassAttr.EnumField;
+import jadx.core.dex.attributes.nodes.JadxError;
+import jadx.core.dex.attributes.nodes.JadxWarn;
 import jadx.core.dex.attributes.nodes.LineAttrNode;
 import jadx.core.dex.attributes.nodes.SourceFileAttr;
 import jadx.core.dex.info.AccessInfo;
@@ -32,6 +34,7 @@ import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.nodes.parser.FieldInitAttr;
 import jadx.core.dex.nodes.parser.FieldInitAttr.InitType;
+import jadx.core.utils.CodegenUtils;
 import jadx.core.utils.ErrorsCounter;
 import jadx.core.utils.Utils;
 import jadx.core.utils.exceptions.CodegenException;
@@ -103,9 +106,8 @@ public class ClassGen {
 		if (cls.contains(AFlag.DONT_GENERATE)) {
 			return;
 		}
-		if (cls.contains(AFlag.INCONSISTENT_CODE)) {
-			code.startLine("// jadx: inconsistent code");
-		}
+		CodegenUtils.addComments(code, cls);
+		insertDecompilationProblems(code, cls);
 		addClassDeclaration(code);
 		addClassBody(code);
 	}
@@ -253,6 +255,7 @@ public class ClassGen {
 			if (code.getLine() != clsDeclLine) {
 				code.newLine();
 			}
+			int savedIndent = code.getIndent();
 			try {
 				addMethod(code, mth);
 			} catch (Exception e) {
@@ -260,6 +263,7 @@ public class ClassGen {
 				code.newLine().add(ErrorsCounter.methodError(mth, "Method generation error", e));
 				code.newLine().add(Utils.getStackTrace(e));
 				code.newLine().add("*/");
+				code.setIndent(savedIndent);
 			}
 		}
 	}
@@ -292,15 +296,13 @@ public class ClassGen {
 			}
 			code.add(';');
 		} else {
+			CodegenUtils.addComments(code, mth);
+			insertDecompilationProblems(code, mth);
 			boolean badCode = mth.contains(AFlag.INCONSISTENT_CODE);
-			if (badCode) {
-				code.startLine("/* JADX WARNING: inconsistent code. */");
+			if (badCode && showInconsistentCode) {
 				code.startLine("/* Code decompiled incorrectly, please refer to instructions dump. */");
-				ErrorsCounter.methodError(mth, "Inconsistent code");
-				if (showInconsistentCode) {
-					mth.remove(AFlag.INCONSISTENT_CODE);
-					badCode = false;
-				}
+				mth.remove(AFlag.INCONSISTENT_CODE);
+				badCode = false;
 			}
 			MethodGen mthGen;
 			if (badCode || mth.contains(AType.JADX_ERROR) || fallback) {
@@ -324,12 +326,33 @@ public class ClassGen {
 		}
 	}
 
+	private void insertDecompilationProblems(CodeWriter code, AttrNode node) {
+		List<JadxError> errors = node.getAll(AType.JADX_ERROR);
+		List<JadxWarn> warns = node.getAll(AType.JADX_WARN);
+		if (!errors.isEmpty()) {
+			errors.forEach(err -> {
+				code.startLine("/*  JADX ERROR: ").add(err.getError());
+				Throwable cause = err.getCause();
+				if (cause != null) {
+					code.incIndent();
+					Utils.appendStackTrace(code, cause);
+					code.decIndent();
+				}
+				code.add("*/");
+			});
+		}
+		if (!warns.isEmpty()) {
+			warns.forEach(warn -> code.startLine("/* JADX WARNING: ").add(warn.getWarn()).add(" */"));
+		}
+	}
+
 	private void addFields(CodeWriter code) throws CodegenException {
 		addEnumFields(code);
 		for (FieldNode f : cls.getFields()) {
 			if (f.contains(AFlag.DONT_GENERATE)) {
 				continue;
 			}
+			CodegenUtils.addComments(code, f);
 			annotationGen.addForField(code, f);
 
 			if (f.getFieldInfo().isRenamed()) {

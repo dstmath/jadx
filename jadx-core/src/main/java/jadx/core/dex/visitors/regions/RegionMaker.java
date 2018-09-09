@@ -55,35 +55,39 @@ import static jadx.core.utils.BlockUtils.skipSyntheticSuccessor;
 public class RegionMaker {
 	private static final Logger LOG = LoggerFactory.getLogger(RegionMaker.class);
 
-	// 'dumb' guard to prevent endless loop in regions processing
-	private static final int REGIONS_LIMIT = 1000 * 1000;
-
 	private final MethodNode mth;
+	private final int regionsLimit;
 	private int regionsCount;
-	private Region[] regionByBlock;
+	private BitSet processedBlocks;
 
 	public RegionMaker(MethodNode mth) {
 		this.mth = mth;
-		this.regionByBlock = new Region[mth.getBasicBlocks().size()];
+		int blocksCount = mth.getBasicBlocks().size();
+		this.processedBlocks = new BitSet(blocksCount);
+		this.regionsLimit = blocksCount * 100;
 	}
 
 	public Region makeRegion(BlockNode startBlock, RegionStack stack) {
-		int startBlockId = startBlock.getId();
-		Region region = regionByBlock[startBlockId];
-		if (region != null) {
-			return region;
+		Region r = new Region(stack.peekRegion());
+		if (startBlock == null) {
+			return r;
 		}
 
-		Region r = new Region(stack.peekRegion());
+		int startBlockId = startBlock.getId();
+		if (processedBlocks.get(startBlockId)) {
+			mth.addWarn("Removed duplicated region for block: " + startBlock + " " + startBlock.getAttributesString());
+			return r;
+		}
+		processedBlocks.set(startBlockId);
+
 		BlockNode next = startBlock;
 		while (next != null) {
 			next = traverse(r, next, stack);
 			regionsCount++;
-			if (regionsCount > REGIONS_LIMIT) {
+			if (regionsCount > regionsLimit) {
 				throw new JadxRuntimeException("Regions count limit reached");
 			}
 		}
-		regionByBlock[startBlockId] = r;
 		return r;
 	}
 
@@ -201,6 +205,7 @@ public class RegionMaker {
 			loopStart.remove(AType.LOOP);
 			loop.getEnd().add(AFlag.SKIP);
 			stack.addExit(loop.getEnd());
+			processedBlocks.clear(loopStart.getId());
 			Region body = makeRegion(loopStart, stack);
 			loopRegion.setBody(body);
 			loopStart.addAttr(AType.LOOP, loop);
@@ -296,6 +301,7 @@ public class RegionMaker {
 		curRegion.getSubBlocks().add(loopRegion);
 
 		loopStart.remove(AType.LOOP);
+		processedBlocks.clear(loopStart.getId());
 		stack.push(loopRegion);
 
 		BlockNode out = null;
@@ -532,7 +538,7 @@ public class RegionMaker {
 
 		BlockNode body = getNextBlock(block);
 		if (body == null) {
-			ErrorsCounter.methodError(mth, "Unexpected end of synchronized block");
+			ErrorsCounter.methodWarn(mth, "Unexpected end of synchronized block");
 			return null;
 		}
 		BlockNode exit = null;
@@ -850,7 +856,7 @@ public class RegionMaker {
 	}
 
 	private Map<BlockNode, List<Object>> reOrderSwitchCases(Map<BlockNode, List<Object>> blocksMap,
-			Map<BlockNode, BlockNode> fallThroughCases) {
+	                                                        Map<BlockNode, BlockNode> fallThroughCases) {
 		List<BlockNode> list = new ArrayList<>(blocksMap.size());
 		list.addAll(blocksMap.keySet());
 		list.sort((a, b) -> {
@@ -904,7 +910,7 @@ public class RegionMaker {
 					blocks.add(handlerBlock);
 					splitters.addAll(handlerBlock.getPredecessors());
 				} else {
-					LOG.debug(ErrorsCounter.formatErrorMsg(mth, "No exception handler block: " + handler));
+					LOG.debug(ErrorsCounter.formatMsg(mth, "No exception handler block: " + handler));
 				}
 			}
 			Set<BlockNode> exits = new HashSet<>();
@@ -912,7 +918,7 @@ public class RegionMaker {
 				for (BlockNode handler : blocks) {
 					List<BlockNode> s = splitter.getSuccessors();
 					if (s.isEmpty()) {
-						LOG.debug(ErrorsCounter.formatErrorMsg(mth, "No successors for splitter: " + splitter));
+						LOG.debug(ErrorsCounter.formatMsg(mth, "No successors for splitter: " + splitter));
 						continue;
 					}
 					BlockNode ss = s.get(0);

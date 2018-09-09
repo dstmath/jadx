@@ -13,16 +13,13 @@ import com.android.dex.ClassData.Field;
 import com.android.dex.ClassData.Method;
 import com.android.dex.ClassDef;
 import com.android.dex.Dex;
-import com.android.dx.rop.code.AccessFlags;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.TestOnly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jadx.core.Consts;
 import jadx.core.codegen.CodeWriter;
 import jadx.core.dex.attributes.annotations.Annotation;
-import jadx.core.dex.attributes.nodes.JadxErrorAttr;
 import jadx.core.dex.attributes.nodes.LineAttrNode;
 import jadx.core.dex.attributes.nodes.SourceFileAttr;
 import jadx.core.dex.info.AccessInfo;
@@ -53,7 +50,7 @@ public class ClassNode extends LineAttrNode implements ILoadable, IDexNode {
 
 	private final List<MethodNode> methods;
 	private final List<FieldNode> fields;
-	private List<ClassNode> innerClasses = Collections.emptyList();
+	private List<ClassNode> innerClasses = new ArrayList<>();
 
 	// store decompiled code
 	private CodeWriter code;
@@ -134,14 +131,16 @@ public class ClassNode extends LineAttrNode implements ILoadable, IDexNode {
 	}
 
 	// empty synthetic class
-	public ClassNode(DexNode dex, ClassInfo clsInfo) {
+	public ClassNode(DexNode dex, String name, int accessFlags) {
 		this.dex = dex;
-		this.clsInfo = clsInfo;
-		this.interfaces = Collections.emptyList();
-		this.methods = Collections.emptyList();
-		this.fields = Collections.emptyList();
-		this.accessFlags = new AccessInfo(AccessFlags.ACC_PUBLIC | AccessFlags.ACC_SYNTHETIC, AFType.CLASS);
+		this.clsInfo = ClassInfo.fromName(dex.root(), name);
+		this.interfaces = new ArrayList<>();
+		this.methods = new ArrayList<>();
+		this.fields = new ArrayList<>();
+		this.accessFlags = new AccessInfo(accessFlags, AFType.CLASS);
 		this.parentClass = this;
+
+		dex.addClassNode(this);
 	}
 
 	private void loadAnnotations(ClassDef cls) {
@@ -248,8 +247,7 @@ public class ClassNode extends LineAttrNode implements ILoadable, IDexNode {
 			try {
 				mth.load();
 			} catch (Exception e) {
-				LOG.error("Method load error: {}", mth, e);
-				mth.addAttr(new JadxErrorAttr(e));
+				mth.addError("Method load error", e);
 			}
 		}
 		for (ClassNode innerCls : getInnerClasses()) {
@@ -371,10 +369,8 @@ public class ClassNode extends LineAttrNode implements ILoadable, IDexNode {
 	}
 
 	public void addInnerClass(ClassNode cls) {
-		if (innerClasses.isEmpty()) {
-			innerClasses = new ArrayList<>(3);
-		}
 		innerClasses.add(cls);
+		cls.parentClass = this;
 	}
 
 	public boolean isEnum() {
@@ -416,6 +412,11 @@ public class ClassNode extends LineAttrNode implements ILoadable, IDexNode {
 	@Override
 	public RootNode root() {
 		return dex.root();
+	}
+
+	@Override
+	public String typeName() {
+		return "class";
 	}
 
 	public String getRawName() {

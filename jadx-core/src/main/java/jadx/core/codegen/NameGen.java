@@ -136,11 +136,11 @@ public class NameGen {
 	private String makeNameForType(ArgType type) {
 		if (type.isPrimitive()) {
 			return makeNameForPrimitive(type);
-		} else if (type.isArray()) {
-			return makeNameForType(type.getArrayRootElement()) + "Arr";
-		} else {
-			return makeNameForObject(type);
 		}
+		if (type.isArray()) {
+			return makeNameForType(type.getArrayRootElement()) + "Arr";
+		}
+		return makeNameForObject(type);
 	}
 
 	private static String makeNameForPrimitive(ArgType type) {

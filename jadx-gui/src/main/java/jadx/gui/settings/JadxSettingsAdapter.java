@@ -1,7 +1,6 @@
 package jadx.gui.settings;
 
 import java.lang.reflect.Modifier;
-import java.lang.reflect.Type;
 import java.util.prefs.Preferences;
 
 import com.google.gson.ExclusionStrategy;
@@ -83,7 +82,7 @@ public class JadxSettingsAdapter {
 
 	private static <T> void populate(GsonBuilder builder, String json, Class<T> type, final T into) {
 		builder.registerTypeAdapter(type, (InstanceCreator<T>) t -> into)
-						.create()
-						.fromJson(json, type);
+				.create()
+				.fromJson(json, type);
 	}
 }

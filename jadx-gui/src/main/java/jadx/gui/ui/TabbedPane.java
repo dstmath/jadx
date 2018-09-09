@@ -4,24 +4,21 @@ import javax.swing.*;
 import javax.swing.plaf.basic.BasicButtonUI;
 import javax.swing.text.BadLocationException;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.event.MouseWheelEvent;
-import java.awt.event.MouseWheelListener;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import jadx.gui.treemodel.JCertificate;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jadx.api.ResourceFile;
 import jadx.api.ResourceType;
+import jadx.gui.treemodel.JCertificate;
+import jadx.gui.treemodel.JClass;
 import jadx.gui.treemodel.JNode;
 import jadx.gui.treemodel.JResource;
 import jadx.gui.utils.JumpManager;
@@ -46,19 +43,17 @@ class TabbedPane extends JTabbedPane {
 
 		setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
 
-		addMouseWheelListener(new MouseWheelListener() {
-			public void mouseWheelMoved(MouseWheelEvent e) {
-				int direction = e.getWheelRotation();
-				int index = getSelectedIndex();
-				int maxIndex = getTabCount() - 1;
-				if ((index == 0 && direction < 0)
-						|| (index == maxIndex && direction > 0)) {
-					index = maxIndex - index;
-				} else {
-					index += direction;
-				}
-				setSelectedIndex(index);
+		addMouseWheelListener(e -> {
+			int direction = e.getWheelRotation();
+			int index = getSelectedIndex();
+			int maxIndex = getTabCount() - 1;
+			if ((index == 0 && direction < 0)
+					|| (index == maxIndex && direction > 0)) {
+				index = maxIndex - index;
+			} else {
+				index += direction;
 			}
+			setSelectedIndex(index);
 		});
 	}
 
@@ -71,23 +66,20 @@ class TabbedPane extends JTabbedPane {
 		if (contentPanel == null) {
 			return;
 		}
-		SwingUtilities.invokeLater(new Runnable() {
-			@Override
-			public void run() {
-				setSelectedComponent(contentPanel);
-				CodeArea codeArea = contentPanel.getCodeArea();
-				int line = pos.getLine();
-				if (line < 0) {
-					try {
-						line = 1 + codeArea.getLineOfOffset(-line);
-					} catch (BadLocationException e) {
-						LOG.error("Can't get line for: {}", pos, e);
-						line = pos.getNode().getLine();
-					}
+		SwingUtilities.invokeLater(() -> {
+			setSelectedComponent(contentPanel);
+			CodeArea codeArea = contentPanel.getCodeArea();
+			int line = pos.getLine();
+			if (line < 0) {
+				try {
+					line = 1 + codeArea.getLineOfOffset(-line);
+				} catch (BadLocationException e) {
+					LOG.error("Can't get line for: {}", pos, e);
+					line = pos.getNode().getLine();
 				}
-				codeArea.scrollToLine(line);
-				codeArea.requestFocus();
 			}
+			codeArea.scrollToLine(line);
+			codeArea.requestFocus();
 		});
 	}
 
@@ -96,12 +88,7 @@ class TabbedPane extends JTabbedPane {
 		if (contentPanel == null) {
 			return;
 		}
-		SwingUtilities.invokeLater(new Runnable() {
-			@Override
-			public void run() {
-				setSelectedComponent(contentPanel);
-			}
-		});
+		SwingUtilities.invokeLater(() -> setSelectedComponent(contentPanel));
 	}
 
 	public void showCertificate(JCertificate cert) {
@@ -109,14 +96,8 @@ class TabbedPane extends JTabbedPane {
 		if (contentPanel == null) {
 			return;
 		}
-		SwingUtilities.invokeLater(new Runnable() {
-			@Override
-			public void run() {
-				setSelectedComponent(contentPanel);
-			}
-		});
+		SwingUtilities.invokeLater(() -> setSelectedComponent(contentPanel));
 	}
-
 
 	public void codeJump(Position pos) {
 		Position curPos = getCurrentPosition();
@@ -187,11 +168,9 @@ class TabbedPane extends JTabbedPane {
 				return null;
 			}
 		}
-		if(node instanceof JCertificate)
-		{
-			return new CertificatePanel(this,node);
+		if (node instanceof JCertificate) {
+			return new CertificatePanel(this, node);
 		}
-
 		return new CodePanel(this, node);
 	}
 
@@ -221,12 +200,7 @@ class TabbedPane extends JTabbedPane {
 		button.setFocusable(false);
 		button.setBorder(null);
 		button.setBorderPainted(false);
-		button.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				closeCodePanel(contentPanel);
-			}
-		});
+		button.addActionListener(e -> closeCodePanel(contentPanel));
 
 		panel.addMouseListener(new MouseAdapter() {
 			@Override
@@ -237,7 +211,6 @@ class TabbedPane extends JTabbedPane {
 					JPopupMenu menu = createTabPopupMenu(contentPanel);
 					menu.show(panel, e.getX(), e.getY());
 				} else {
-					// TODO: make correct event delegation to tabbed pane
 					setSelectedComponent(contentPanel);
 				}
 			}
@@ -252,37 +225,31 @@ class TabbedPane extends JTabbedPane {
 	private JPopupMenu createTabPopupMenu(final ContentPanel contentPanel) {
 		JPopupMenu menu = new JPopupMenu();
 
+		if (getNodeFullName() != null) {
+			JMenuItem copyRootClassName = new JMenuItem(NLS.str("tabs.copy_class_name"));
+			copyRootClassName.addActionListener(actionEvent -> copyRootClassName());
+			menu.add(copyRootClassName);
+			menu.addSeparator();
+		}
+
 		JMenuItem closeTab = new JMenuItem(NLS.str("tabs.close"));
-		closeTab.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				closeCodePanel(contentPanel);
-			}
-		});
+		closeTab.addActionListener(e -> closeCodePanel(contentPanel));
 		menu.add(closeTab);
 
 		if (openTabs.size() > 1) {
 			JMenuItem closeOther = new JMenuItem(NLS.str("tabs.closeOthers"));
-			closeOther.addActionListener(new ActionListener() {
-				@Override
-				public void actionPerformed(ActionEvent e) {
-					List<ContentPanel> contentPanels = new ArrayList<>(openTabs.values());
-					for (ContentPanel panel : contentPanels) {
-						if (panel != contentPanel) {
-							closeCodePanel(panel);
-						}
+			closeOther.addActionListener(e -> {
+				List<ContentPanel> contentPanels = new ArrayList<>(openTabs.values());
+				for (ContentPanel panel : contentPanels) {
+					if (panel != contentPanel) {
+						closeCodePanel(panel);
 					}
 				}
 			});
 			menu.add(closeOther);
 
 			JMenuItem closeAll = new JMenuItem(NLS.str("tabs.closeAll"));
-			closeAll.addActionListener(new ActionListener() {
-				@Override
-				public void actionPerformed(ActionEvent e) {
-					closeAllTabs();
-				}
-			});
+			closeAll.addActionListener(e -> closeAllTabs());
 			menu.add(closeAll);
 			menu.addSeparator();
 
@@ -295,12 +262,7 @@ class TabbedPane extends JTabbedPane {
 				JNode node = entry.getKey();
 				final String clsName = node.makeLongString();
 				JMenuItem item = new JMenuItem(clsName);
-				item.addActionListener(new ActionListener() {
-					@Override
-					public void actionPerformed(ActionEvent e) {
-						setSelectedComponent(cp);
-					}
-				});
+				item.addActionListener(e -> setSelectedComponent(cp));
 				item.setIcon(node.getIcon());
 				menu.add(item);
 			}
@@ -313,6 +275,28 @@ class TabbedPane extends JTabbedPane {
 		for (ContentPanel panel : contentPanels) {
 			closeCodePanel(panel);
 		}
+	}
+
+	public void copyRootClassName() {
+		String name = getNodeFullName();
+		if (name != null) {
+			Utils.setClipboardString(name);
+		}
+	}
+
+	@Nullable
+	private String getNodeFullName() {
+		ContentPanel selectedPanel = getSelectedCodePanel();
+		if (selectedPanel != null) {
+			JNode node = selectedPanel.getNode();
+			JClass jClass = node.getRootClass();
+			if (jClass != null) {
+				return jClass.getFullName();
+			} else {
+				return node.getName();
+			}
+		}
+		return null;
 	}
 
 	public void loadSettings() {

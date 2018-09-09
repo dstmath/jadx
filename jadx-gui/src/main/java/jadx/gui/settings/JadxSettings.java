@@ -114,7 +114,7 @@ public class JadxSettings extends JadxCLIArgs {
 		recentFiles.add(0, filePath);
 		int count = recentFiles.size();
 		if (count > RECENT_FILES_COUNT) {
-			recentFiles.subList(0, count - RECENT_FILES_COUNT).clear();
+			recentFiles.subList(RECENT_FILES_COUNT, count).clear();
 		}
 		sync();
 	}
@@ -158,7 +158,7 @@ public class JadxSettings extends JadxCLIArgs {
 		this.showInconsistentCode = showInconsistentCode;
 	}
 
-	public LangLocale getLangLocale(){
+	public LangLocale getLangLocale() {
 		return this.langLocale;
 	}
 

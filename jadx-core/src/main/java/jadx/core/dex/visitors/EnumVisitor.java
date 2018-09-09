@@ -3,6 +3,8 @@ package jadx.core.dex.visitors;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jetbrains.annotations.Nullable;
+
 import jadx.core.codegen.TypeGen;
 import jadx.core.deobf.NameMapper;
 import jadx.core.dex.attributes.AFlag;
@@ -27,7 +29,6 @@ import jadx.core.dex.nodes.MethodNode;
 import jadx.core.utils.ErrorsCounter;
 import jadx.core.utils.InsnUtils;
 import jadx.core.utils.exceptions.JadxException;
-import org.jetbrains.annotations.Nullable;
 
 @JadxVisitor(
 		name = "EnumVisitor",
@@ -51,7 +52,7 @@ public class EnumVisitor extends AbstractVisitor {
 			}
 		}
 		if (staticMethod == null) {
-			ErrorsCounter.classError(cls, "Enum class init method not found");
+			ErrorsCounter.classWarn(cls, "Enum class init method not found");
 			return true;
 		}
 
