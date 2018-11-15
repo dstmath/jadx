@@ -1,7 +1,6 @@
 package jadx.core.codegen;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -84,18 +83,18 @@ public class ClassGen {
 		}
 		int importsCount = imports.size();
 		if (importsCount != 0) {
-			List<String> sortImports = new ArrayList<>(importsCount);
-			for (ClassInfo ic : imports) {
-				sortImports.add(ic.getAlias().getFullName());
-			}
-			Collections.sort(sortImports);
-
-			for (String imp : sortImports) {
-				clsCode.startLine("import ").add(imp).add(';');
-			}
+			List<ClassInfo> sortedImports = new ArrayList<>(imports);
+			sortedImports.sort(Comparator.comparing(classInfo -> classInfo.getAlias().getFullName()));
+			sortedImports.forEach(classInfo -> {
+				clsCode.startLine("import ");
+				ClassNode classNode = cls.root().resolveClass(classInfo);
+				if (classNode != null) {
+					clsCode.attachAnnotation(classNode);
+				}
+				clsCode.add(classInfo.getAlias().getFullName());
+				clsCode.add(';');
+			});
 			clsCode.newLine();
-
-			sortImports.clear();
 			imports.clear();
 		}
 		clsCode.add(clsBody);
@@ -342,7 +341,7 @@ public class ClassGen {
 			});
 		}
 		if (!warns.isEmpty()) {
-			warns.forEach(warn -> code.startLine("/* JADX WARNING: ").add(warn.getWarn()).add(" */"));
+			warns.forEach(warn -> code.startLine("/* JADX WARNING: ").addMultiLine(warn.getWarn()).add(" */"));
 		}
 	}
 
