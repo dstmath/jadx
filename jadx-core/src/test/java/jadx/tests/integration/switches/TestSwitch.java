@@ -1,17 +1,14 @@
 package jadx.tests.integration.switches;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
 
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestSwitch extends IntegrationTest {
 	public static class TestCls {
-		public String escape(String str) {
+		public String test(String str) {
 			int len = str.length();
 			StringBuilder sb = new StringBuilder(len);
 			for (int i = 0; i < len; i++) {
@@ -40,14 +37,12 @@ public class TestSwitch extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsString("case '/':"));
-		assertThat(code, containsString(indent(5) + "break;"));
-		assertThat(code, containsString(indent(4) + "default:"));
-
-		assertEquals(1, count(code, "i++"));
-		assertEquals(4, count(code, "break;"));
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.contains("case '/':")
+				.contains(indent(5) + "break;")
+				.contains(indent(4) + "default:")
+				.containsOne("i++")
+				.countString(4, "break;");
 	}
 }

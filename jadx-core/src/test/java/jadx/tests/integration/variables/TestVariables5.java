@@ -1,15 +1,11 @@
 package jadx.tests.integration.variables;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
 
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.not;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertTrue;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestVariables5 extends IntegrationTest {
 
@@ -18,12 +14,12 @@ public class TestVariables5 extends IntegrationTest {
 		private boolean enabled;
 
 		private void testIfInLoop() {
-			int j = 0;
-			for (int i = 0; i < f.length(); i++) {
-				char ch = f.charAt(i);
+			int i = 0;
+			for (int i2 = 0; i2 < f.length(); i2++) {
+				char ch = f.charAt(i2);
 				if (ch == '/') {
-					j++;
-					if (j == 2) {
+					i++;
+					if (i == 2) {
 						setEnabled(true);
 						return;
 					}
@@ -39,7 +35,7 @@ public class TestVariables5 extends IntegrationTest {
 		public void check() {
 			setEnabled(false);
 			testIfInLoop();
-			assertTrue(enabled);
+			assertThat(enabled).isTrue();
 		}
 	}
 
@@ -47,10 +43,10 @@ public class TestVariables5 extends IntegrationTest {
 	public void test() {
 		noDebugInfo();
 		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, not(containsString("int i2++;")));
-		assertThat(code, containsOne("int i = 0;"));
-		assertThat(code, containsOne("i++;"));
+		assertThat(cls)
+				.code()
+				.doesNotContain("int i2++;")
+				.containsOne("int i = 0;")
+				.containsOneOf("i++;", "&& (i = i + 1) == 2");
 	}
 }

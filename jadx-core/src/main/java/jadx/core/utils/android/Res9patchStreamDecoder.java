@@ -16,71 +16,76 @@
 
 package jadx.core.utils.android;
 
-import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.DataInput;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
-import org.apache.commons.io.IOUtils;
+import javax.imageio.ImageIO;
 
-import jadx.core.utils.exceptions.JadxException;
+import org.jetbrains.annotations.Nullable;
+
+import jadx.core.utils.exceptions.JadxRuntimeException;
 
 /**
- * @author Ryszard Wiśniewski <brut.alll@gmail.com>
+ * @author Ryszard Wiśniewski "brut.alll@gmail.com"
  */
 public class Res9patchStreamDecoder {
 
-	public void decode(InputStream in, OutputStream out) throws JadxException {
+	public boolean decode(InputStream in, OutputStream out) {
 		try {
-			byte[] data = IOUtils.toByteArray(in);
-
-			BufferedImage im = ImageIO.read(new ByteArrayInputStream(data));
+			BufferedImage im = ImageIO.read(in);
+			NinePatch np = getNinePatch(in);
+			if (np == null) {
+				return false;
+			}
 			int w = im.getWidth();
 			int h = im.getHeight();
 
 			BufferedImage im2 = new BufferedImage(w + 2, h + 2, BufferedImage.TYPE_INT_ARGB);
 			im2.createGraphics().drawImage(im, 1, 1, w, h, null);
 
-			NinePatch np = getNinePatch(data);
 			drawHLine(im2, h + 1, np.padLeft + 1, w - np.padRight);
 			drawVLine(im2, w + 1, np.padTop + 1, h - np.padBottom);
 
 			int[] xDivs = np.xDivs;
-			for (int i = 0; i < xDivs.length; i += 2) {
+			for (int i = 0; i < xDivs.length - 1; i += 2) {
 				drawHLine(im2, 0, xDivs[i] + 1, xDivs[i + 1]);
 			}
 
 			int[] yDivs = np.yDivs;
-			for (int i = 0; i < yDivs.length; i += 2) {
+			for (int i = 0; i < yDivs.length - 1; i += 2) {
 				drawVLine(im2, 0, yDivs[i] + 1, yDivs[i + 1]);
 			}
 
 			ImageIO.write(im2, "png", out);
-		} catch (IOException | NullPointerException ex) {
-			throw new JadxException(ex.toString());
+			return true;
+		} catch (Exception e) {
+			throw new JadxRuntimeException("9patch image decode error", e);
 		}
 	}
 
-	private NinePatch getNinePatch(byte[] data) throws JadxException, IOException {
-		ExtDataInput di = new ExtDataInput(new ByteArrayInputStream(data));
-		find9patchChunk(di);
+	@Nullable
+	private NinePatch getNinePatch(InputStream in) throws IOException {
+		ExtDataInput di = new ExtDataInput(in);
+		if (!find9patchChunk(di)) {
+			return null;
+		}
 		return NinePatch.decode(di);
 	}
 
-	private void find9patchChunk(DataInput di) throws JadxException, IOException {
+	private boolean find9patchChunk(DataInput di) throws IOException {
 		di.skipBytes(8);
 		while (true) {
 			int size;
 			try {
 				size = di.readInt();
 			} catch (IOException ex) {
-				throw new JadxException("Cant find nine patch chunk", ex);
+				return false;
 			}
 			if (di.readInt() == NP_CHUNK_TYPE) {
-				return;
+				return true;
 			}
 			di.skipBytes(size + 4);
 		}
@@ -110,7 +115,7 @@ public class Res9patchStreamDecoder {
 		public final int[] yDivs;
 
 		public NinePatch(int padLeft, int padRight, int padTop, int padBottom,
-		                 int[] xDivs, int[] yDivs) {
+				int[] xDivs, int[] yDivs) {
 			this.padLeft = padLeft;
 			this.padRight = padRight;
 			this.padTop = padTop;

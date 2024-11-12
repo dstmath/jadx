@@ -1,22 +1,31 @@
 package jadx.gui.utils;
 
+import jadx.core.utils.Utils;
 import jadx.gui.treemodel.JNode;
 
 public class JumpPosition {
 	private final JNode node;
-	private final int line;
+	private int pos;
 
-	public JumpPosition(JNode node, int line) {
-		this.node = node;
-		this.line = line;
+	public JumpPosition(JNode node) {
+		this(node, node.getPos());
+	}
+
+	public JumpPosition(JNode node, int pos) {
+		this.node = Utils.getOrElse(node.getRootClass(), node);
+		this.pos = pos;
+	}
+
+	public int getPos() {
+		return pos;
+	}
+
+	public void setPos(int pos) {
+		this.pos = pos;
 	}
 
 	public JNode getNode() {
 		return node;
-	}
-
-	public int getLine() {
-		return line;
 	}
 
 	@Override
@@ -27,17 +36,17 @@ public class JumpPosition {
 		if (!(obj instanceof JumpPosition)) {
 			return false;
 		}
-		JumpPosition position = (JumpPosition) obj;
-		return line == position.line && node.equals(position.node);
+		JumpPosition jump = (JumpPosition) obj;
+		return pos == jump.pos && node.equals(jump.node);
 	}
 
 	@Override
 	public int hashCode() {
-		return 31 * node.hashCode() + line;
+		return 31 * node.hashCode() + pos;
 	}
 
 	@Override
 	public String toString() {
-		return "Position: " + node + " : " + line;
+		return "Jump: " + node + " : " + pos;
 	}
 }

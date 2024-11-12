@@ -22,8 +22,19 @@ public final class NamedArg extends InsnArg implements Named {
 		return true;
 	}
 
+	@Override
 	public void setName(@NotNull String name) {
 		this.name = name;
+	}
+
+	@Override
+	public InsnArg duplicate() {
+		return copyCommonParams(new NamedArg(name, type));
+	}
+
+	@Override
+	public int hashCode() {
+		return name.hashCode();
 	}
 
 	@Override
@@ -38,12 +49,12 @@ public final class NamedArg extends InsnArg implements Named {
 	}
 
 	@Override
-	public int hashCode() {
-		return name.hashCode();
+	public String toShortString() {
+		return name;
 	}
 
 	@Override
 	public String toString() {
-		return "(" + name + " " + type + ")";
+		return '(' + name + ' ' + type + ')';
 	}
 }

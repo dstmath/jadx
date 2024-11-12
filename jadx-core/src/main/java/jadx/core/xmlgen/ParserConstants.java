@@ -9,9 +9,10 @@ public class ParserConstants {
 	}
 
 	protected static final String ANDROID_NS_URL = "http://schemas.android.com/apk/res/android";
+	protected static final String ANDROID_NS_VALUE = "android";
 
 	/**
-	 * Chunk types
+	 * Chunk types as defined in frameworks/base/libs/androidfw/include/androidfw/ResourceTypes.h (AOSP)
 	 */
 	protected static final int RES_NULL_TYPE = 0x0000;
 	protected static final int RES_STRING_POOL_TYPE = 0x0001;
@@ -27,9 +28,13 @@ public class ParserConstants {
 	protected static final int RES_XML_LAST_CHUNK_TYPE = 0x017f;
 	protected static final int RES_XML_RESOURCE_MAP_TYPE = 0x0180;
 
-	protected static final int RES_TABLE_PACKAGE_TYPE = 0x0200;
-	protected static final int RES_TABLE_TYPE_TYPE = 0x0201;
-	protected static final int RES_TABLE_TYPE_SPEC_TYPE = 0x0202;
+	protected static final int RES_TABLE_PACKAGE_TYPE = 0x0200; // 512
+	protected static final int RES_TABLE_TYPE_TYPE = 0x0201; // 513
+	protected static final int RES_TABLE_TYPE_SPEC_TYPE = 0x0202; // 514
+	protected static final int RES_TABLE_TYPE_LIBRARY = 0x0203; // 515
+	protected static final int RES_TABLE_TYPE_OVERLAY = 0x0204; // 516
+	protected static final int RES_TABLE_TYPE_OVERLAY_POLICY = 0x0205; // 517
+	protected static final int RES_TABLE_TYPE_STAGED_ALIAS = 0x0206; // 518
 
 	/**
 	 * Type constants
@@ -48,6 +53,18 @@ public class ParserConstants {
 	protected static final int TYPE_DIMENSION = 0x05;
 	// The 'data' holds a complex number encoding a fraction of a container.
 	protected static final int TYPE_FRACTION = 0x06;
+
+	/**
+	 * The 'data' holds a dynamic reference, a reference to another resource table entry.
+	 * See https://github.com/skylot/jadx/issues/919
+	 */
+	protected static final int TYPE_DYNAMIC_REFERENCE = 0x07;
+
+	/**
+	 * According to the sources of apktool this type seem to be related to themes
+	 * See https://github.com/skylot/jadx/issues/919
+	 */
+	protected static final int TYPE_DYNAMIC_ATTRIBUTE = 0x08;
 	// Beginning of integer flavors...
 	protected static final int TYPE_FIRST_INT = 0x10;
 	// The 'data' is a raw integer value of the form n..n.
@@ -71,7 +88,7 @@ public class ParserConstants {
 	// ...end of integer flavors.
 	protected static final int TYPE_LAST_INT = 0x1f;
 
-	// Where the unit type information is.  This gives us 16 possible
+	// Where the unit type information is. This gives us 16 possible
 	// types, as defined below.
 	protected static final int COMPLEX_UNIT_SHIFT = 0;
 	protected static final int COMPLEX_UNIT_MASK = 0xf;
@@ -95,7 +112,7 @@ public class ParserConstants {
 	protected static final int COMPLEX_UNIT_FRACTION_PARENT = 1;
 
 	// Where the radix information is, telling where the decimal place
-	// appears in the mantissa.  This give us 4 possible fixed point
+	// appears in the mantissa. This give us 4 possible fixed point
 	// representations as defined below.
 	protected static final int COMPLEX_RADIX_SHIFT = 4;
 	protected static final int COMPLEX_RADIX_MASK = 0x3;
@@ -109,13 +126,13 @@ public class ParserConstants {
 	// The mantissa magnitude is 0 bits -- i.e, 0x0.nnnnnn
 	protected static final int COMPLEX_RADIX_0P23 = 3;
 
-	// Where the actual value is.  This gives us 23 bits of
-	// precision.  The top bit is the sign.
+	// Where the actual value is. This gives us 23 bits of
+	// precision. The top bit is the sign.
 	protected static final int COMPLEX_MANTISSA_SHIFT = 8;
 	protected static final int COMPLEX_MANTISSA_MASK = 0xffffff;
 
 	protected static final double MANTISSA_MULT = 1.0f / (1 << COMPLEX_MANTISSA_SHIFT);
-	protected static final double[] RADIX_MULTS = new double[]{
+	protected static final double[] RADIX_MULTS = new double[] {
 			1.0f * MANTISSA_MULT,
 			1.0f / (1 << 7) * MANTISSA_MULT,
 			1.0f / (1 << 15) * MANTISSA_MULT,
@@ -128,7 +145,19 @@ public class ParserConstants {
 	protected static final int SORTED_FLAG = 1;
 	protected static final int UTF8_FLAG = 1 << 8;
 
+	/**
+	 * ResTable_type
+	 */
 	protected static final int NO_ENTRY = 0xFFFFFFFF;
+
+	// If set, the entry is sparse, and encodes both the entry ID and offset into each entry,
+	// and a binary search is used to find the key. Only available on platforms >= O.
+	// Mark any types that use this with a v26 qualifier to prevent runtime issues on older
+	// platforms.
+	protected static final int FLAG_SPARSE = 0x01;
+	// If set, the offsets to the entries are encoded in 16-bit, real_offset = offset * 4u
+	// An 16-bit offset of 0xffffu means a NO_ENTRY
+	protected static final int FLAG_OFFSET16 = 0x02;
 
 	/**
 	 * ResTable_entry
@@ -138,6 +167,12 @@ public class ParserConstants {
 	protected static final int FLAG_COMPLEX = 0x0001;
 	// If set, this resource has been declared public, so libraries are allowed to reference it.
 	protected static final int FLAG_PUBLIC = 0x0002;
+	// If set, this is a weak resource and may be overridden by strong resources of the same name/type.
+	// This is only useful during linking with other resource tables.
+	protected static final int FLAG_WEAK = 0x0004;
+	// If set, this is a compact entry with data type and value directly
+	// encoded in the entry, see ResTable_entry::compact
+	protected static final int FLAG_COMPACT = 0x0008;
 
 	/**
 	 * ResTable_map
@@ -184,7 +219,7 @@ public class ParserConstants {
 	protected static final int ATTR_TYPE_REFERENCE = 1;
 	// Attribute holds a generic string.
 	protected static final int ATTR_TYPE_STRING = 1 << 1;
-	// Attribute holds an integer value.  ATTR_MIN and ATTR_MIN can
+	// Attribute holds an integer value. ATTR_MIN and ATTR_MIN can
 	// optionally specify a constrained range of possible integer values.
 	protected static final int ATTR_TYPE_INTEGER = 1 << 2;
 	// Attribute holds a boolean integer.
@@ -197,10 +232,10 @@ public class ParserConstants {
 	protected static final int ATTR_TYPE_DIMENSION = 1 << 6;
 	// Attribute holds a fraction value, such as "20%".
 	protected static final int ATTR_TYPE_FRACTION = 1 << 7;
-	// Attribute holds an enumeration.  The enumeration values are
+	// Attribute holds an enumeration. The enumeration values are
 	// supplied as additional entries in the map.
 	protected static final int ATTR_TYPE_ENUM = 1 << 16;
-	// Attribute holds a bitmaks of flags.  The flag bit values are
+	// Attribute holds a bitmaks of flags. The flag bit values are
 	// supplied as additional entries in the map.
 	protected static final int ATTR_TYPE_FLAGS = 1 << 17;
 

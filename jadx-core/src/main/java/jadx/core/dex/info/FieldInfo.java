@@ -1,12 +1,14 @@
 package jadx.core.dex.info;
 
-import com.android.dex.FieldId;
+import java.util.Objects;
 
+import jadx.api.plugins.input.data.IFieldRef;
 import jadx.core.codegen.TypeGen;
 import jadx.core.dex.instructions.args.ArgType;
-import jadx.core.dex.nodes.DexNode;
+import jadx.core.dex.nodes.IFieldInfoRef;
+import jadx.core.dex.nodes.RootNode;
 
-public final class FieldInfo {
+public final class FieldInfo implements IFieldInfoRef {
 
 	private final ClassInfo declClass;
 	private final String name;
@@ -20,17 +22,15 @@ public final class FieldInfo {
 		this.alias = name;
 	}
 
-	public static FieldInfo from(DexNode dex, ClassInfo declClass, String name, ArgType type) {
+	public static FieldInfo from(RootNode root, ClassInfo declClass, String name, ArgType type) {
 		FieldInfo field = new FieldInfo(declClass, name, type);
-		return dex.root().getInfoStorage().getField(field);
+		return root.getInfoStorage().getField(field);
 	}
 
-	public static FieldInfo fromDex(DexNode dex, int index) {
-		FieldId field = dex.getFieldId(index);
-		return from(dex,
-				ClassInfo.fromDex(dex, field.getDeclaringClassIndex()),
-				dex.getString(field.getNameIndex()),
-				dex.getType(field.getTypeIndex()));
+	public static FieldInfo fromRef(RootNode root, IFieldRef fieldRef) {
+		ClassInfo declClass = ClassInfo.fromName(root, fieldRef.getParentClassType());
+		FieldInfo field = new FieldInfo(declClass, fieldRef.getName(), ArgType.parse(fieldRef.getType()));
+		return root.getInfoStorage().getField(field);
 	}
 
 	public String getName() {
@@ -53,12 +53,33 @@ public final class FieldInfo {
 		this.alias = alias;
 	}
 
-	public String getFullId() {
-		return declClass.getFullName() + "." + name + ":" + TypeGen.signature(type);
+	public void removeAlias() {
+		this.alias = name;
 	}
 
-	public boolean isRenamed() {
-		return !name.equals(alias);
+	public boolean hasAlias() {
+		return !Objects.equals(name, alias);
+	}
+
+	public String getFullId() {
+		return declClass.getFullName() + '.' + name + ':' + TypeGen.signature(type);
+	}
+
+	public String getShortId() {
+		return name + ':' + TypeGen.signature(type);
+	}
+
+	public String getRawFullId() {
+		return declClass.makeRawFullName() + '.' + name + ':' + TypeGen.signature(type);
+	}
+
+	public boolean equalsNameAndType(FieldInfo other) {
+		return name.equals(other.name) && type.equals(other.type);
+	}
+
+	@Override
+	public FieldInfo getFieldInfo() {
+		return this;
 	}
 
 	@Override
@@ -85,6 +106,6 @@ public final class FieldInfo {
 
 	@Override
 	public String toString() {
-		return declClass + "." + name + " " + type;
+		return declClass + "." + name + ' ' + type;
 	}
 }

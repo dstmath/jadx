@@ -1,20 +1,16 @@
 package jadx.tests.integration.loops;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static jadx.tests.api.utils.JadxMatchers.countString;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestBreakInLoop extends IntegrationTest {
 
 	public static class TestCls {
-		private int f;
+		public int f;
 
-		private void test(int[] a, int b) {
+		public void test(int[] a, int b) {
 			for (int i = 0; i < a.length; i++) {
 				a[i]++;
 				if (i < b) {
@@ -27,15 +23,13 @@ public class TestBreakInLoop extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("for (int i = 0; i < a.length; i++) {"));
-//		assertThat(code, containsOne("a[i]++;"));
-		assertThat(code, containsOne("if (i < b) {"));
-		assertThat(code, containsOne("break;"));
-		assertThat(code, containsOne("this.f++;"));
-
-		assertThat(code, countString(0, "else"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("for (int i = 0; i < a.length; i++) {")
+				.containsOne("if (i < b) {")
+				.containsOne("break;")
+				.containsOne("this.f++;")
+				// .containsOne("a[i]++;")
+				.countString(0, "else");
 	}
 }

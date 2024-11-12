@@ -2,113 +2,91 @@ package jadx.core.xmlgen;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import jadx.api.ICodeInfo;
+import jadx.api.ICodeWriter;
 import jadx.api.ResourcesLoader;
-import jadx.core.codegen.CodeWriter;
 import jadx.core.dex.info.ConstStorage;
-import jadx.core.dex.instructions.args.ArgType;
-import jadx.core.dex.nodes.FieldNode;
+import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.RootNode;
 import jadx.core.utils.StringUtils;
+import jadx.core.utils.android.AndroidResourcesMap;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.core.xmlgen.entry.ValuesParser;
 
-/* TODO:
-	Don't die when error occurs
-	Check error cases, maybe checked const values are not always the same
-	Better error messages
-	What to do, when Binary XML Manifest is > size(int)?
-	Check for missing chunk size types
-	Implement missing data types
-	Use line numbers to recreate EXACT AndroidManifest
-	Check Element chunk size
-*/
-
 public class BinaryXMLParser extends CommonBinaryParser {
-
 	private static final Logger LOG = LoggerFactory.getLogger(BinaryXMLParser.class);
-	private static final String ANDROID_R_STYLE_CLS = "android.R$style";
-	private static final boolean ATTR_NEW_LINE = false;
 
-	private final Map<Integer, String> styleMap = new HashMap<>();
-	private final Map<Integer, FieldNode> localStyleMap = new HashMap<>();
+	private final RootNode rootNode;
+	private final ManifestAttributes manifestAttributes;
+	private final boolean attrNewLine;
+
 	private final Map<Integer, String> resNames;
-	private final Map<String, String> nsMap = new HashMap<>();
+	private Map<String, String> nsMap;
 	private Set<String> nsMapGenerated;
+	private Set<String> definedNamespaces;
 	private final Map<String, String> tagAttrDeobfNames = new HashMap<>();
 
-	private CodeWriter writer;
-	private String[] strings;
+	private ICodeWriter writer;
+	private BinaryXMLStrings strings;
 	private String currentTag = "ERROR";
 	private boolean firstElement;
 	private ValuesParser valuesParser;
 	private boolean isLastEnd = true;
 	private boolean isOneLine = true;
 	private int namespaceDepth = 0;
-	private int[] resourceIds;
-
-	private RootNode rootNode;
+	private @Nullable int[] resourceIds;
 	private String appPackageName;
+
+	private Map<String, ClassNode> classNameCache;
 
 	public BinaryXMLParser(RootNode rootNode) {
 		this.rootNode = rootNode;
+		this.manifestAttributes = rootNode.initManifestAttributes();
+		this.attrNewLine = !rootNode.getArgs().isSkipXmlPrettyPrint();
 		try {
-			readAndroidRStyleClass();
-			// add application constants
 			ConstStorage constStorage = rootNode.getConstValues();
-			Map<Object, FieldNode> constFields = constStorage.getGlobalConstFields();
-			for (Map.Entry<Object, FieldNode> entry : constFields.entrySet()) {
-				Object key = entry.getKey();
-				FieldNode field = entry.getValue();
-				if (field.getType().equals(ArgType.INT) && key instanceof Integer) {
-					localStyleMap.put((Integer) key, field);
-				}
-			}
 			resNames = constStorage.getResourcesNames();
 		} catch (Exception e) {
 			throw new JadxRuntimeException("BinaryXMLParser init error", e);
 		}
 	}
 
-	private void readAndroidRStyleClass() {
-		try {
-			Class<?> rStyleCls = Class.forName(ANDROID_R_STYLE_CLS);
-			for (Field f : rStyleCls.getFields()) {
-				styleMap.put(f.getInt(f.getType()), f.getName());
-			}
-		} catch (Exception th) {
-			LOG.error("Android R class loading failed", th);
-		}
-	}
-
-	public synchronized CodeWriter parse(InputStream inputStream) throws IOException {
+	public synchronized ICodeInfo parse(InputStream inputStream) throws IOException {
+		resourceIds = null;
 		is = new ParserStream(inputStream);
 		if (!isBinaryXml()) {
 			return ResourcesLoader.loadToCodeWriter(inputStream);
 		}
 		nsMapGenerated = new HashSet<>();
-		writer = new CodeWriter();
+		nsMap = new HashMap<>();
+		definedNamespaces = new HashSet<>();
+		writer = rootNode.makeCodeWriter();
 		writer.add("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
 		firstElement = true;
 		decode();
-		writer.finish();
-		return writer;
+		nsMap = null;
+		definedNamespaces = null;
+		ICodeInfo codeInfo = writer.finish();
+		this.classNameCache = null; // reset class name cache
+		return codeInfo;
 	}
 
 	private boolean isBinaryXml() throws IOException {
 		is.mark(4);
 		int v = is.readInt16(); // version
 		int h = is.readInt16(); // header size
-		if (v == 0x0003 && h == 0x0008) {
+		// Some APK Manifest.xml the version is 0
+		if (h == 0x0008) {
 			return true;
 		}
 		is.reset();
@@ -170,40 +148,55 @@ public class BinaryXMLParser extends CommonBinaryParser {
 	}
 
 	private void parseNameSpace() throws IOException {
-		if (is.readInt16() != 0x10) {
-			die("NAMESPACE header is not 0x0010");
+		int headerSize = is.readInt16();
+		if (headerSize > 0x10) {
+			LOG.warn("Invalid namespace header");
+		} else if (headerSize < 0x10) {
+			die("NAMESPACE header is not 0x10 big");
 		}
-		if (is.readInt32() != 0x18) {
+		int size = is.readInt32();
+		if (size > 0x18) {
+			LOG.warn("Invalid namespace size");
+		} else if (size < 0x18) {
 			die("NAMESPACE header chunk is not 0x18 big");
 		}
+
 		int beginLineNumber = is.readInt32();
 		int comment = is.readInt32();
 		int beginPrefix = is.readInt32();
 		int beginURI = is.readInt32();
+		is.skip(headerSize - 0x10);
 
+		String nsKey = getString(beginURI);
 		String nsValue = getString(beginPrefix);
-		if (!nsMap.containsValue(nsValue)) {
-			nsMap.putIfAbsent(getString(beginURI), nsValue);
+		if (StringUtils.notBlank(nsKey) && !nsMap.containsValue(nsValue)) {
+			nsMap.putIfAbsent(nsKey, nsValue);
 		}
 		namespaceDepth++;
 	}
 
 	private void parseNameSpaceEnd() throws IOException {
-		if (is.readInt16() != 0x10) {
-			die("NAMESPACE header is not 0x0010");
+		int headerSize = is.readInt16();
+		if (headerSize > 0x10) {
+			LOG.warn("Invalid namespace end");
+		} else if (headerSize < 0x10) {
+			die("NAMESPACE end is not 0x10 big");
 		}
-		if (is.readInt32() != 0x18) {
-			die("NAMESPACE header chunk is not 0x18 big");
+		int dataSize = is.readInt32();
+		if (dataSize != 0x18) {
+			LOG.warn("Invalid namespace end size");
 		}
 		int endLineNumber = is.readInt32();
 		int comment = is.readInt32();
 		int endPrefix = is.readInt32();
 		int endURI = is.readInt32();
+		is.skip(headerSize - 0x10);
 		namespaceDepth--;
 
+		String nsKey = getString(endURI);
 		String nsValue = getString(endPrefix);
-		if (!nsMap.containsValue(nsValue)) {
-			nsMap.putIfAbsent(getString(endURI), nsValue);
+		if (StringUtils.notBlank(nsKey) && !nsMap.containsValue(nsValue)) {
+			nsMap.putIfAbsent(nsKey, nsValue);
 		}
 	}
 
@@ -221,7 +214,7 @@ public class BinaryXMLParser extends CommonBinaryParser {
 		String str = getString(strIndex);
 		if (!isLastEnd) {
 			isLastEnd = true;
-			writer.add(">");
+			writer.add('>');
 		}
 		writer.attachSourceLine(lineNumber);
 		String escapedStr = StringUtils.escapeXML(str);
@@ -241,90 +234,109 @@ public class BinaryXMLParser extends CommonBinaryParser {
 			die("ELEMENT HEADER SIZE is not 0x10");
 		}
 		// TODO: Check element chunk size
-		is.readInt32();
+		long startPos = is.getPos();
+		int elementSize = is.readInt32();
 		int elementBegLineNumber = is.readInt32();
 		int comment = is.readInt32();
 		int startNS = is.readInt32();
 		int startNSName = is.readInt32(); // actually is elementName...
 		if (!isLastEnd && !"ERROR".equals(currentTag)) {
-			writer.add(">");
+			writer.add('>');
 		}
 		isOneLine = true;
 		isLastEnd = false;
 		currentTag = deobfClassName(getString(startNSName));
 		currentTag = getValidTagAttributeName(currentTag);
-		writer.startLine("<").add(currentTag);
+		writer.startLine('<').add(currentTag);
 		writer.attachSourceLine(elementBegLineNumber);
 		int attributeStart = is.readInt16();
 		if (attributeStart != 0x14) {
 			die("startNS's attributeStart is not 0x14");
 		}
 		int attributeSize = is.readInt16();
-		if (attributeSize != 0x14) {
-			die("startNS's attributeSize is not 0x14");
+		if (attributeSize < 0x14) {
+			die("startNS's attributeSize is less than 0x14");
 		}
+
 		int attributeCount = is.readInt16();
 		int idIndex = is.readInt16();
 		int classIndex = is.readInt16();
 		int styleIndex = is.readInt16();
-		if ("manifest".equals(currentTag) || writer.getIndent() == 0) {
+		if ("manifest".equals(currentTag) || definedNamespaces.size() != nsMap.size()) {
 			for (Map.Entry<String, String> entry : nsMap.entrySet()) {
-				String nsValue = entry.getValue();
-				writer.add(" xmlns");
-				if (nsValue != null && !nsValue.trim().isEmpty()) {
-					writer.add(':');
-					writer.add(nsValue);
+				if (!definedNamespaces.contains(entry.getKey())) {
+					definedNamespaces.add(entry.getKey());
+					String nsValue = getValidTagAttributeName(entry.getValue());
+					writer.add(" xmlns");
+					if (nsValue != null && !nsValue.trim().isEmpty()) {
+						writer.add(':');
+						writer.add(nsValue);
+					}
+					writer.add("=\"").add(StringUtils.escapeXML(entry.getKey())).add('"');
 				}
-				writer.add("=\"").add(StringUtils.escapeXML(entry.getKey())).add("\"");
 			}
 		}
-		boolean attrNewLine = attributeCount != 1 && ATTR_NEW_LINE;
+		Set<String> attrCache = new HashSet<>();
+		boolean attrNewLine = attributeCount != 1 && this.attrNewLine;
 		for (int i = 0; i < attributeCount; i++) {
-			parseAttribute(i, attrNewLine);
+			parseAttribute(i, attrNewLine, attrCache, attributeSize);
+		}
+		long endPos = is.getPos();
+		if (endPos - startPos + 0x4 < elementSize) {
+			is.skip(elementSize - (endPos - startPos + 0x4));
 		}
 	}
 
-	private void parseAttribute(int i, boolean newLine) throws IOException {
+	private void parseAttribute(int i, boolean newLine, Set<String> attrCache, int attributeSize) throws IOException {
 		int attributeNS = is.readInt32();
 		int attributeName = is.readInt32();
 		int attributeRawValue = is.readInt32();
-		int attrValSize = is.readInt16();
-		if (attrValSize != 0x08) {
-			die("attrValSize != 0x08 not supported");
-		}
-		if (is.readInt8() != 0) {
-			die("res0 is not 0");
-		}
+		is.skip(3);
 		int attrValDataType = is.readInt8();
 		int attrValData = is.readInt32();
+
+		is.skip(attributeSize - 0x14);
+
+		String shortNsName = null;
+		if (attributeNS != -1) {
+			shortNsName = getAttributeNS(attributeNS, newLine);
+		}
+		String attrName = getValidTagAttributeName(getAttributeName(attributeName));
+		String attrFullName = shortNsName != null ? shortNsName + ":" + attrName : attrName;
+		// do not dump duplicated values
+		if (XmlDeobf.isDuplicatedAttr(attrFullName, attrCache)) {
+			return;
+		}
 
 		if (newLine) {
 			writer.startLine().addIndent();
 		} else {
 			writer.add(' ');
 		}
-		String shortNsName = null;
-		if (attributeNS != -1) {
-			shortNsName = getAttributeNS(attributeNS);
-			writer.add(shortNsName).add(':');
-		}
-		String attrName = getValidTagAttributeName(getAttributeName(attributeName));
-		writer.add(attrName).add("=\"");
-		String decodedAttr = ManifestAttributes.getInstance().decode(attrName, attrValData);
+		writer.add(attrFullName).add("=\"");
+		String decodedAttr = manifestAttributes.decode(attrName, attrValData);
 		if (decodedAttr != null) {
 			memorizePackageName(attrName, decodedAttr);
-			if (isDeobfCandidateAttr(shortNsName, attrName)) {
+			if (isDeobfCandidateAttr(attrFullName)) {
 				decodedAttr = deobfClassName(decodedAttr);
 			}
+			attachClassNode(writer, attrName, decodedAttr);
 			writer.add(StringUtils.escapeXML(decodedAttr));
 		} else {
 			decodeAttribute(attributeNS, attrValDataType, attrValData,
-					shortNsName, attrName);
+					attrFullName);
+		}
+		if (shortNsName != null && shortNsName.equals("android")) {
+			if (attrName.equals("pathData")) {
+				rootNode.getGradleInfoStorage().setVectorPathData(true);
+			} else if (attrName.equals("fillType")) {
+				rootNode.getGradleInfoStorage().setVectorFillType(true);
+			}
 		}
 		writer.add('"');
 	}
 
-	private String getAttributeNS(int attributeNS) {
+	private String getAttributeNS(int attributeNS, boolean newLine) {
 		String attrUrl = getString(attributeNS);
 		if (attrUrl == null || attrUrl.isEmpty()) {
 			if (isResInternalId(attributeNS)) {
@@ -335,93 +347,100 @@ public class BinaryXMLParser extends CommonBinaryParser {
 		}
 		String attrName = nsMap.get(attrUrl);
 		if (attrName == null) {
-			attrName = generateNameForNS(attrUrl);
+			attrName = generateNameForNS(attrUrl, newLine);
 		}
 		return attrName;
 	}
 
-	private String generateNameForNS(String attrUrl) {
-		for (int i = 1; ; i++) {
-			String attrName = "ns" + i;
-			if (!nsMap.containsValue(attrName) && !nsMapGenerated.contains(attrName)) {
-				nsMapGenerated.add(attrName);
-				// do not add generated value to nsMap
-				// because attrUrl might be used in a neighbor element, but never defined
-				writer.add("xmlns:").add(attrName)
-						.add("=\"").add(attrUrl).add("\" ");
-				return attrName;
+	private String generateNameForNS(String attrUrl, boolean newLine) {
+		String attrName;
+		if (ANDROID_NS_URL.equals(attrUrl)) {
+			attrName = ANDROID_NS_VALUE;
+			nsMap.put(ANDROID_NS_URL, attrName);
+		} else {
+			for (int i = 1;; i++) {
+				attrName = "ns" + i;
+				if (!nsMapGenerated.contains(attrName) && !nsMap.containsValue(attrName)) {
+					nsMapGenerated.add(attrName);
+					// do not add generated value to nsMap
+					// because attrUrl might be used in a neighbor element, but never defined
+					break;
+				}
 			}
 		}
+		if (newLine) {
+			writer.startLine().addIndent();
+		} else {
+			writer.add(' ');
+		}
+		writer.add("xmlns:").add(attrName).add("=\"").add(attrUrl).add("\" ");
+		return attrName;
 	}
 
 	private String getAttributeName(int id) {
+		// As the outcome of https://github.com/skylot/jadx/issues/1208
+		// Android seems to favor entries from AndroidResMap and only if
+		// there is no entry uses the values form the XML string pool
+		if (resourceIds != null && 0 <= id && id < resourceIds.length) {
+			int resId = resourceIds[id];
+			String str = AndroidResourcesMap.getResName(resId);
+			if (str != null) {
+				// cut type before /
+				int typeEnd = str.indexOf('/');
+				if (typeEnd != -1) {
+					return str.substring(typeEnd + 1);
+				}
+				return str;
+			}
+		}
+
 		String str = getString(id);
 		if (str == null || str.isEmpty()) {
-			int resId = resourceIds[id];
-			str = ValuesParser.getAndroidResMap().get(resId);
-			if (str == null) {
-				return "NOT_FOUND_0x" + Integer.toHexString(id);
-			}
-			// cut type before /
-			int typeEnd = str.indexOf('/');
-			if (typeEnd != -1) {
-				return str.substring(typeEnd + 1);
-			}
-			return str;
+			return "NOT_FOUND_0x" + Integer.toHexString(id);
 		}
 		return str;
 	}
 
 	private String getString(int strId) {
-		if (0 <= strId && strId < strings.length) {
-			return strings[strId];
+		if (0 <= strId && strId < strings.size()) {
+			return strings.get(strId);
 		}
 		return "NOT_FOUND_STR_0x" + Integer.toHexString(strId);
 	}
 
-	private void decodeAttribute(int attributeNS, int attrValDataType, int attrValData,
-	                             String shortNsName, String attrName) {
-
+	private void decodeAttribute(int attributeNS, int attrValDataType, int attrValData, String attrFullName) {
 		if (attrValDataType == TYPE_REFERENCE) {
 			// reference custom processing
-			String name = styleMap.get(attrValData);
-			if (name != null) {
-				writer.add("@style/").add(name.replaceAll("_", "."));
+			String resName = resNames.get(attrValData);
+			if (resName != null) {
+				writer.add('@');
+				if (resName.startsWith("id/")) {
+					writer.add('+');
+				}
+				writer.add(resName);
 			} else {
-				FieldNode field = localStyleMap.get(attrValData);
-				if (field != null) {
-					String cls = field.getParentClass().getShortName().toLowerCase();
-					writer.add("@");
-					if ("id".equals(cls)) {
-						writer.add('+');
-					}
-					writer.add(cls).add("/").add(field.getName());
+				String androidResName = AndroidResourcesMap.getResName(attrValData);
+				if (androidResName != null) {
+					writer.add("@android:").add(androidResName);
+				} else if (attrValData == 0) {
+					writer.add("@null");
 				} else {
-					String resName = resNames.get(attrValData);
-					if (resName != null) {
-						writer.add("@");
-						if (resName.startsWith("id/")) {
-							writer.add("+");
-						}
-						writer.add(resName);
-					} else {
-						resName = ValuesParser.getAndroidResMap().get(attrValData);
-						if (resName != null) {
-							writer.add("@android:").add(resName);
-						} else if (attrValData == 0) {
-							writer.add("@null");
-						} else {
-							writer.add("0x").add(Integer.toHexString(attrValData));
-						}
-					}
+					writer.add("0x").add(Integer.toHexString(attrValData));
 				}
 			}
 		} else {
-			String str = valuesParser.decodeValue(attrValDataType, attrValData);
-			memorizePackageName(attrName, str);
-			if (isDeobfCandidateAttr(shortNsName, attrName)) {
+			String str;
+			try {
+				str = valuesParser.decodeValue(attrValDataType, attrValData);
+			} catch (JadxRuntimeException e) {
+				LOG.error("Failed to decode attribute value of \"{}\"", attrFullName, e);
+				str = null;
+			}
+			memorizePackageName(attrFullName, str);
+			if (isDeobfCandidateAttr(attrFullName)) {
 				str = deobfClassName(str);
 			}
+			attachClassNode(writer, attrFullName, str);
 			writer.add(str != null ? StringUtils.escapeXML(str) : "null");
 		}
 	}
@@ -444,10 +463,10 @@ public class BinaryXMLParser extends CommonBinaryParser {
 		} else {
 			writer.startLine("</");
 			writer.attachSourceLine(endLineNumber);
-//			if (elementNS != -1) {
-//				writer.add(getString(elementNS)).add(':');
-//			}
-			writer.add(elemName).add(">");
+			// if (elementNS != -1) {
+			// writer.add(getString(elementNS)).add(':');
+			// }
+			writer.add(elemName).add('>');
 		}
 		isLastEnd = true;
 		if (writer.getIndent() != 0) {
@@ -465,8 +484,7 @@ public class BinaryXMLParser extends CommonBinaryParser {
 		String generated;
 		do {
 			generated = generateTagAttrName();
-		}
-		while (tagAttrDeobfNames.containsValue(generated));
+		} while (tagAttrDeobfNames.containsValue(generated));
 		tagAttrDeobfNames.put(originalName, generated);
 		return generated;
 	}
@@ -481,27 +499,42 @@ public class BinaryXMLParser extends CommonBinaryParser {
 		return sb.toString();
 	}
 
+	private void attachClassNode(ICodeWriter writer, String attrFullName, String clsName) {
+		if (!writer.isMetadataSupported()) {
+			return;
+		}
+		if (clsName == null || !attrFullName.equals("android:name")) {
+			return;
+		}
+		String clsFullName;
+		if (clsName.startsWith(".")) {
+			clsFullName = appPackageName + clsName;
+		} else {
+			clsFullName = clsName;
+		}
+		if (classNameCache == null) {
+			classNameCache = rootNode.buildFullAliasClassCache();
+		}
+		ClassNode classNode = classNameCache.get(clsFullName);
+		if (classNode != null) {
+			writer.attachAnnotation(classNode);
+		}
+	}
+
 	private String deobfClassName(String className) {
-		String newName = XmlDeobf.deobfClassName(rootNode, className,
-				appPackageName);
+		String newName = XmlDeobf.deobfClassName(rootNode, className, appPackageName);
 		if (newName != null) {
 			return newName;
 		}
 		return className;
 	}
 
-	private boolean isDeobfCandidateAttr(String shortNsName, String attrName) {
-		String fullName;
-		if (shortNsName != null) {
-			fullName = shortNsName + ":" + attrName;
-		} else {
-			return false;
-		}
-		return "android:name".equals(fullName);
+	private boolean isDeobfCandidateAttr(String attrFullName) {
+		return "android:name".equals(attrFullName);
 	}
 
-	private void memorizePackageName(String attrName, String attrValue) {
-		if ("manifest".equals(currentTag) && "package".equals(attrName)) {
+	private void memorizePackageName(String attrFullName, String attrValue) {
+		if ("manifest".equals(currentTag) && "package".equals(attrFullName)) {
 			appPackageName = attrValue;
 		}
 	}

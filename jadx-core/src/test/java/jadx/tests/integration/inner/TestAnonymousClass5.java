@@ -4,17 +4,13 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
+import jadx.NotYetImplemented;
 import jadx.tests.api.IntegrationTest;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.not;
-import static org.hamcrest.Matchers.sameInstance;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestAnonymousClass5 extends IntegrationTest {
 
@@ -66,20 +62,18 @@ public class TestAnonymousClass5 extends IntegrationTest {
 			map.put("a", v);
 			Iterable<TestCls> it = test("a");
 			TestCls next = it.iterator().next();
-			assertThat(next, sameInstance(v));
-			assertThat(next.a, is(4));
+			assertThat(next).isSameAs(v);
+			assertThat(next.a).isEqualTo(4);
 		}
 	}
 
 	@Test
+	@NotYetImplemented
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("map.get(name);"));
-		assertThat(code, not(containsString("access$008")));
-
-		// TODO
-//		assertThat(code, not(containsString("synthetic")));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("map.get(name);")
+				.doesNotContain("access$008")
+				.doesNotContain("synthetic");
 	}
 }

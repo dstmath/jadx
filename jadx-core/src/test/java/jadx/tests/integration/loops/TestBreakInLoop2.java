@@ -2,20 +2,17 @@ package jadx.tests.integration.loops;
 
 import java.util.List;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.junit.Assert.assertThat;
-import static org.hamcrest.Matchers.anyOf;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestBreakInLoop2 extends IntegrationTest {
 
+	@SuppressWarnings({ "BusyWait", "ResultOfMethodCallIgnored" })
 	public static class TestCls {
 		public void test(List<Integer> data) throws Exception {
-			for (; ; ) {
+			for (;;) {
 				try {
 					funcB(data);
 					break;
@@ -25,7 +22,7 @@ public class TestBreakInLoop2 extends IntegrationTest {
 					}
 					data.clear();
 				}
-				Thread.sleep(100);
+				Thread.sleep(100L);
 			}
 		}
 
@@ -40,13 +37,12 @@ public class TestBreakInLoop2 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("while (true) {"));
-		assertThat(code, anyOf(containsOne("break;"), containsOne("return;")));
-		assertThat(code, containsOne("throw ex;"));
-		assertThat(code, containsOne("data.clear();"));
-		assertThat(code, containsOne("Thread.sleep(100);"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("while (true) {")
+				.containsOneOf("break;", "return;")
+				.containsOne("throw ex;")
+				.containsOne("data.clear();")
+				.containsOne("Thread.sleep(100L);");
 	}
 }

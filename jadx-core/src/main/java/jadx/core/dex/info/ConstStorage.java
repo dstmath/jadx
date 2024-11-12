@@ -2,48 +2,47 @@ package jadx.core.dex.info;
 
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.jetbrains.annotations.Nullable;
 
 import jadx.api.JadxArgs;
-import jadx.core.dex.attributes.AType;
 import jadx.core.dex.instructions.args.LiteralArg;
 import jadx.core.dex.instructions.args.PrimitiveType;
 import jadx.core.dex.nodes.ClassNode;
-import jadx.core.dex.nodes.DexNode;
 import jadx.core.dex.nodes.FieldNode;
-import jadx.core.dex.nodes.parser.FieldInitAttr;
-import jadx.core.utils.ErrorsCounter;
+import jadx.core.dex.nodes.IFieldInfoRef;
+import jadx.core.dex.nodes.RootNode;
+import jadx.core.dex.visitors.prepare.CollectConstValues;
 
 public class ConstStorage {
 
 	private static final class ValueStorage {
-		private final Map<Object, FieldNode> values = new HashMap<>();
+		private final Map<Object, IFieldInfoRef> values = new ConcurrentHashMap<>();
 		private final Set<Object> duplicates = new HashSet<>();
 
-		public Map<Object, FieldNode> getValues() {
+		public Map<Object, IFieldInfoRef> getValues() {
 			return values;
 		}
 
-		public FieldNode get(Object key) {
+		public IFieldInfoRef get(Object key) {
 			return values.get(key);
 		}
 
 		/**
 		 * @return true if this value is duplicated
 		 */
-		public boolean put(Object value, FieldNode fld) {
-			FieldNode prev = values.put(value, fld);
+		public boolean put(Object value, IFieldInfoRef fld) {
+			if (duplicates.contains(value)) {
+				values.remove(value);
+				return true;
+			}
+			IFieldInfoRef prev = values.put(value, fld);
 			if (prev != null) {
 				values.remove(value);
 				duplicates.add(value);
-				return true;
-			}
-			if (duplicates.contains(value)) {
-				values.remove(value);
 				return true;
 			}
 			return false;
@@ -51,6 +50,16 @@ public class ConstStorage {
 
 		public boolean contains(Object value) {
 			return duplicates.contains(value) || values.containsKey(value);
+		}
+
+		void removeForCls(ClassNode cls) {
+			values.entrySet().removeIf(entry -> {
+				IFieldInfoRef field = entry.getValue();
+				if (field instanceof FieldNode) {
+					return ((FieldNode) field).getParentClass().equals(cls);
+				}
+				return false;
+			});
 		}
 	}
 
@@ -64,49 +73,42 @@ public class ConstStorage {
 		this.replaceEnabled = args.isReplaceConsts();
 	}
 
-	public void processConstFields(ClassNode cls, List<FieldNode> staticFields) {
-		if (!replaceEnabled || staticFields.isEmpty()) {
-			return;
-		}
-		for (FieldNode f : staticFields) {
-			AccessInfo accFlags = f.getAccessFlags();
-			if (accFlags.isStatic() && accFlags.isFinal()) {
-				FieldInitAttr fv = f.get(AType.FIELD_INIT);
-				if (fv != null
-						&& fv.getValue() != null
-						&& fv.getValueType() == FieldInitAttr.InitType.CONST
-						&& fv != FieldInitAttr.NULL_VALUE) {
-					addConstField(cls, f, fv.getValue(), accFlags.isPublic());
-				}
-			}
+	public void addConstField(FieldNode fld, Object value, boolean isPublic) {
+		if (isPublic) {
+			addGlobalConstField(fld, value);
+		} else {
+			getClsValues(fld.getParentClass()).put(value, fld);
 		}
 	}
 
-	private void addConstField(ClassNode cls, FieldNode fld, Object value, boolean isPublic) {
-		if (isPublic) {
-			globalValues.put(value, fld);
-		} else {
-			getClsValues(cls).put(value, fld);
-		}
+	public void addGlobalConstField(IFieldInfoRef fld, Object value) {
+		globalValues.put(value, fld);
+	}
+
+	/**
+	 * Use method from CollectConstValues class
+	 */
+	@Deprecated
+	public static @Nullable Object getFieldConstValue(FieldNode fld) {
+		return CollectConstValues.getFieldConstValue(fld);
+	}
+
+	public void removeForClass(ClassNode cls) {
+		classes.remove(cls);
+		globalValues.removeForCls(cls);
 	}
 
 	private ValueStorage getClsValues(ClassNode cls) {
-		ValueStorage classValues = classes.get(cls);
-		if (classValues == null) {
-			classValues = new ValueStorage();
-			classes.put(cls, classValues);
-		}
-		return classValues;
+		return classes.computeIfAbsent(cls, c -> new ValueStorage());
 	}
 
-	@Nullable
-	public FieldNode getConstField(ClassNode cls, Object value, boolean searchGlobal) {
+	public @Nullable IFieldInfoRef getConstField(ClassNode cls, Object value, boolean searchGlobal) {
 		if (!replaceEnabled) {
 			return null;
 		}
-		DexNode dex = cls.dex();
+		RootNode root = cls.root();
 		if (value instanceof Integer) {
-			FieldNode rField = getResourceField((Integer) value, dex);
+			FieldNode rField = getResourceField((Integer) value, root);
 			if (rField != null) {
 				return rField;
 			}
@@ -119,7 +121,7 @@ public class ConstStorage {
 		while (current != null) {
 			ValueStorage classValues = classes.get(current);
 			if (classValues != null) {
-				FieldNode field = classValues.get(value);
+				IFieldInfoRef field = classValues.get(value);
 				if (field != null) {
 					if (foundInGlobal) {
 						return null;
@@ -131,7 +133,7 @@ public class ConstStorage {
 			if (parentClass == null) {
 				break;
 			}
-			current = dex.resolveClass(parentClass);
+			current = root.resolveClass(parentClass);
 		}
 		if (searchGlobal) {
 			return globalValues.get(value);
@@ -140,12 +142,12 @@ public class ConstStorage {
 	}
 
 	@Nullable
-	private FieldNode getResourceField(Integer value, DexNode dex) {
+	private FieldNode getResourceField(Integer value, RootNode root) {
 		String str = resourcesNames.get(value);
 		if (str == null) {
 			return null;
 		}
-		ClassNode appResClass = dex.root().getAppResClass();
+		ClassNode appResClass = root.getAppResClass();
 		if (appResClass == null) {
 			return null;
 		}
@@ -156,16 +158,18 @@ public class ConstStorage {
 		String typeName = parts[0];
 		String fieldName = parts[1];
 		for (ClassNode innerClass : appResClass.getInnerClasses()) {
-			if (innerClass.getShortName().equals(typeName)) {
+			if (innerClass.getClassInfo().getShortName().equals(typeName)) {
 				return innerClass.searchFieldByName(fieldName);
 			}
 		}
-		ErrorsCounter.classWarn(appResClass, "Not found resource field with id: " + value + ", name: " + str.replace('/', '.'));
+		appResClass.addWarn("Not found resource field with id: " + value + ", name: " + str.replace('/', '.'));
 		return null;
 	}
 
-	@Nullable
-	public FieldNode getConstFieldByLiteralArg(ClassNode cls, LiteralArg arg) {
+	public @Nullable IFieldInfoRef getConstFieldByLiteralArg(ClassNode cls, LiteralArg arg) {
+		if (!replaceEnabled) {
+			return null;
+		}
 		PrimitiveType type = arg.getType().getPrimitiveType();
 		if (type == null) {
 			return null;
@@ -204,7 +208,7 @@ public class ConstStorage {
 		return resourcesNames;
 	}
 
-	public Map<Object, FieldNode> getGlobalConstFields() {
+	public Map<Object, IFieldInfoRef> getGlobalConstFields() {
 		return globalValues.getValues();
 	}
 

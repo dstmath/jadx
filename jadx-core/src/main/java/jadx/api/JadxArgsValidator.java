@@ -13,8 +13,9 @@ public class JadxArgsValidator {
 
 	private static final Logger LOG = LoggerFactory.getLogger(JadxArgsValidator.class);
 
-	public static void validate(JadxArgs args) {
-		checkInputFiles(args);
+	public static void validate(JadxDecompiler jadx) {
+		JadxArgs args = jadx.getArgs();
+		checkInputFiles(jadx, args);
 		validateOutDirs(args);
 
 		if (LOG.isDebugEnabled()) {
@@ -22,19 +23,10 @@ public class JadxArgsValidator {
 		}
 	}
 
-	private static void checkInputFiles(JadxArgs args) {
+	private static void checkInputFiles(JadxDecompiler jadx, JadxArgs args) {
 		List<File> inputFiles = args.getInputFiles();
-		if (inputFiles.isEmpty()) {
+		if (inputFiles.isEmpty() && jadx.getCustomCodeLoaders().isEmpty()) {
 			throw new JadxArgsValidateException("Please specify input file");
-		}
-		if (inputFiles.size() > 1) {
-			for (File inputFile : inputFiles) {
-				String fileName = inputFile.getName();
-				if (fileName.startsWith("--")) {
-					throw new JadxArgsValidateException("Unknown argument: " + fileName);
-				}
-			}
-			throw new JadxArgsValidateException("Only one input file supported");
 		}
 		for (File file : inputFiles) {
 			checkFile(file);
@@ -53,53 +45,49 @@ public class JadxArgsValidator {
 			} else {
 				outDir = makeDirFromInput(args);
 			}
+			args.setOutDir(outDir);
 		}
-		args.setOutDir(outDir);
-		setFromOut(args);
+		if (srcDir == null) {
+			args.setOutDirSrc(new File(args.getOutDir(), JadxArgs.DEFAULT_SRC_DIR));
+		}
+		if (resDir == null) {
+			args.setOutDirRes(new File(args.getOutDir(), JadxArgs.DEFAULT_RES_DIR));
+		}
 
-		checkDir(args.getOutDir());
-		checkDir(args.getOutDirSrc());
-		checkDir(args.getOutDirRes());
+		checkDir(args.getOutDir(), "Output");
+		checkDir(args.getOutDirSrc(), "Source output");
+		checkDir(args.getOutDirRes(), "Resources output");
 	}
 
 	@NotNull
 	private static File makeDirFromInput(JadxArgs args) {
-		File outDir;
 		String outDirName;
-		File file = args.getInputFiles().get(0);
-		String name = file.getName();
-		int pos = name.lastIndexOf('.');
-		if (pos != -1) {
-			outDirName = name.substring(0, pos);
+		List<File> inputFiles = args.getInputFiles();
+		if (inputFiles.isEmpty()) {
+			outDirName = JadxArgs.DEFAULT_OUT_DIR;
 		} else {
-			outDirName = name + "-" + JadxArgs.DEFAULT_OUT_DIR;
+			File file = inputFiles.get(0);
+			String name = file.getName();
+			int pos = name.lastIndexOf('.');
+			if (pos != -1) {
+				outDirName = name.substring(0, pos);
+			} else {
+				outDirName = name + '-' + JadxArgs.DEFAULT_OUT_DIR;
+			}
 		}
 		LOG.info("output directory: {}", outDirName);
-		outDir = new File(outDirName);
-		return outDir;
-	}
-
-	private static void setFromOut(JadxArgs args) {
-		if (args.getOutDirSrc() == null) {
-			args.setOutDirSrc(new File(args.getOutDir(), JadxArgs.DEFAULT_SRC_DIR));
-		}
-		if (args.getOutDirRes() == null) {
-			args.setOutDirRes(new File(args.getOutDir(), JadxArgs.DEFAULT_RES_DIR));
-		}
+		return new File(outDirName);
 	}
 
 	private static void checkFile(File file) {
 		if (!file.exists()) {
 			throw new JadxArgsValidateException("File not found " + file.getAbsolutePath());
 		}
-		if (file.isDirectory()) {
-			throw new JadxArgsValidateException("Expected file but found directory instead: " + file.getAbsolutePath());
-		}
 	}
 
-	private static void checkDir(File dir) {
+	private static void checkDir(File dir, String desc) {
 		if (dir != null && dir.exists() && !dir.isDirectory()) {
-			throw new JadxArgsValidateException("Output directory exists as file " + dir);
+			throw new JadxArgsValidateException(desc + " directory exists as file " + dir);
 		}
 	}
 

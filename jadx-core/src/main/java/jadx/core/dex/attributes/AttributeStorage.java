@@ -7,10 +7,15 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
-import jadx.core.dex.attributes.annotations.Annotation;
-import jadx.core.dex.attributes.annotations.AnnotationsList;
+import jadx.api.plugins.input.data.annotations.IAnnotation;
+import jadx.api.plugins.input.data.attributes.IJadxAttrType;
+import jadx.api.plugins.input.data.attributes.IJadxAttribute;
+import jadx.api.plugins.input.data.attributes.JadxAttrType;
+import jadx.api.plugins.input.data.attributes.types.AnnotationsAttr;
 import jadx.core.utils.Utils;
+import jadx.core.utils.exceptions.JadxRuntimeException;
 
 /**
  * Storage for different attribute types:
@@ -19,23 +24,39 @@ import jadx.core.utils.Utils;
  */
 public class AttributeStorage {
 
+	static {
+		int flagsCount = AFlag.values().length;
+		if (flagsCount >= 64) {
+			throw new JadxRuntimeException("Try to reduce flags count to 64 for use one long in EnumSet, now " + flagsCount);
+		}
+	}
+
 	private final Set<AFlag> flags;
-	private final Map<AType<?>, IAttribute> attributes;
+	private Map<IJadxAttrType<?>, IJadxAttribute> attributes;
 
 	public AttributeStorage() {
 		flags = EnumSet.noneOf(AFlag.class);
-		attributes = new IdentityHashMap<>();
+		attributes = Collections.emptyMap();
+	}
+
+	public AttributeStorage(List<IJadxAttribute> attributesList) {
+		this();
+		add(attributesList);
 	}
 
 	public void add(AFlag flag) {
 		flags.add(flag);
 	}
 
-	public void add(IAttribute attr) {
-		attributes.put(attr.getType(), attr);
+	public void add(IJadxAttribute attr) {
+		writeAttributes(map -> map.put(attr.getAttrType(), attr));
 	}
 
-	public <T> void add(AType<AttrList<T>> type, T obj) {
+	public void add(List<IJadxAttribute> list) {
+		writeAttributes(map -> list.forEach(attr -> map.put(attr.getAttrType(), attr)));
+	}
+
+	public <T> void add(IJadxAttrType<AttrList<T>> type, T obj) {
 		AttrList<T> list = get(type);
 		if (list == null) {
 			list = new AttrList<>(type);
@@ -46,28 +67,30 @@ public class AttributeStorage {
 
 	public void addAll(AttributeStorage otherList) {
 		flags.addAll(otherList.flags);
-		attributes.putAll(otherList.attributes);
+		if (!otherList.attributes.isEmpty()) {
+			writeAttributes(m -> m.putAll(otherList.attributes));
+		}
 	}
 
 	public boolean contains(AFlag flag) {
 		return flags.contains(flag);
 	}
 
-	public <T extends IAttribute> boolean contains(AType<T> type) {
+	public <T extends IJadxAttribute> boolean contains(IJadxAttrType<T> type) {
 		return attributes.containsKey(type);
 	}
 
 	@SuppressWarnings("unchecked")
-	public <T extends IAttribute> T get(AType<T> type) {
+	public <T extends IJadxAttribute> T get(IJadxAttrType<T> type) {
 		return (T) attributes.get(type);
 	}
 
-	public Annotation getAnnotation(String cls) {
-		AnnotationsList aList = get(AType.ANNOTATION_LIST);
+	public IAnnotation getAnnotation(String cls) {
+		AnnotationsAttr aList = get(JadxAttrType.ANNOTATION_LIST);
 		return aList == null ? null : aList.get(cls);
 	}
 
-	public <T> List<T> getAll(AType<AttrList<T>> type) {
+	public <T> List<T> getAll(IJadxAttrType<AttrList<T>> type) {
 		AttrList<T> attrList = get(type);
 		if (attrList == null) {
 			return Collections.emptyList();
@@ -79,25 +102,48 @@ public class AttributeStorage {
 		flags.remove(flag);
 	}
 
-	public <T extends IAttribute> void remove(AType<T> type) {
-		attributes.remove(type);
+	public void clearFlags() {
+		flags.clear();
 	}
 
-	public void remove(IAttribute attr) {
-		AType<? extends IAttribute> type = attr.getType();
-		IAttribute a = attributes.get(type);
-		if (a == attr) {
-			attributes.remove(type);
+	public <T extends IJadxAttribute> void remove(IJadxAttrType<T> type) {
+		if (!attributes.isEmpty()) {
+			writeAttributes(map -> map.remove(type));
 		}
 	}
 
-	public void clear() {
-		flags.clear();
-		attributes.clear();
+	public void remove(IJadxAttribute attr) {
+		if (!attributes.isEmpty()) {
+			writeAttributes(map -> {
+				IJadxAttrType<? extends IJadxAttribute> type = attr.getAttrType();
+				IJadxAttribute a = map.get(type);
+				if (a == attr) {
+					map.remove(type);
+				}
+			});
+		}
+	}
+
+	private void writeAttributes(Consumer<Map<IJadxAttrType<?>, IJadxAttribute>> mapConsumer) {
+		if (attributes.isEmpty()) {
+			attributes = new IdentityHashMap<>(5);
+		}
+		synchronized (this) {
+			mapConsumer.accept(attributes);
+		}
+	}
+
+	public void unloadAttributes() {
+		if (attributes.isEmpty()) {
+			return;
+		}
+		synchronized (this) {
+			attributes.entrySet().removeIf(entry -> !entry.getValue().keepLoaded());
+		}
 	}
 
 	public List<String> getAttributeStrings() {
-		int size = flags.size() + attributes.size() + attributes.size();
+		int size = flags.size() + attributes.size();
 		if (size == 0) {
 			return Collections.emptyList();
 		}
@@ -105,8 +151,8 @@ public class AttributeStorage {
 		for (AFlag a : flags) {
 			list.add(a.toString());
 		}
-		for (IAttribute a : attributes.values()) {
-			list.add(a.toString());
+		for (IJadxAttribute a : attributes.values()) {
+			list.add(a.toAttrString());
 		}
 		return list;
 	}
@@ -121,6 +167,7 @@ public class AttributeStorage {
 		if (list.isEmpty()) {
 			return "";
 		}
-		return "A:{" + Utils.listToString(list) + "}";
+		list.sort(String::compareTo);
+		return "A[" + Utils.listToString(list) + ']';
 	}
 }

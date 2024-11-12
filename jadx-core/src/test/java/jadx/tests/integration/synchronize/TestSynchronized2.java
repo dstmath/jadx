@@ -1,16 +1,15 @@
 package jadx.tests.integration.synchronize;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
+import jadx.NotYetImplemented;
 import jadx.tests.api.IntegrationTest;
-
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestSynchronized2 extends IntegrationTest {
 
 	public static class TestCls {
+		@SuppressWarnings("unused")
 		private static synchronized boolean test(Object obj) {
 			return obj.toString() != null;
 		}
@@ -18,13 +17,20 @@ public class TestSynchronized2 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.contains("private static synchronized boolean test(Object obj) {")
+				.contains("obj.toString() != null;");
+	}
 
-		assertThat(code, containsString("private static synchronized boolean test(Object obj) {"));
-		assertThat(code, containsString("obj.toString() != null;"));
-		// TODO
-//		assertThat(code, containsString("return obj.toString() != null;"));
-//		assertThat(code, not(containsString("synchronized (")));
+	@Test
+	@NotYetImplemented
+	public void test2() {
+		useDexInput(); // java bytecode don't add exception handlers
+
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.contains("return obj.toString() != null;")
+				.doesNotContain("synchronized (");
 	}
 }

@@ -1,17 +1,24 @@
 package jadx.tests.api.compiler;
 
-import javax.tools.SimpleJavaFileObject;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.io.OutputStream;
 import java.net.URI;
 
+import javax.tools.SimpleJavaFileObject;
+
 public class JavaClassObject extends SimpleJavaFileObject {
 
-	protected final ByteArrayOutputStream bos = new ByteArrayOutputStream();
+	private final String name;
+	private final ByteArrayOutputStream bos = new ByteArrayOutputStream();
 
 	public JavaClassObject(String name, Kind kind) {
 		super(URI.create("string:///" + name.replace('.', '/') + kind.extension), kind);
+		this.name = name;
+	}
+
+	@Override
+	public String getName() {
+		return name;
 	}
 
 	public byte[] getBytes() {
@@ -19,7 +26,7 @@ public class JavaClassObject extends SimpleJavaFileObject {
 	}
 
 	@Override
-	public OutputStream openOutputStream() throws IOException {
+	public OutputStream openOutputStream() {
 		return bos;
 	}
 }

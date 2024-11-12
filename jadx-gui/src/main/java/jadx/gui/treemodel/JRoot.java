@@ -1,60 +1,65 @@
 package jadx.gui.treemodel;
 
-import javax.swing.*;
 import java.io.File;
-import java.util.Collections;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import javax.swing.Icon;
+import javax.swing.ImageIcon;
+import javax.swing.tree.TreeNode;
+
+import org.jetbrains.annotations.Nullable;
+
 import jadx.api.ResourceFile;
+import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.gui.JadxWrapper;
+import jadx.gui.settings.JadxProject;
 import jadx.gui.treemodel.JResource.JResType;
 import jadx.gui.utils.NLS;
-import jadx.gui.utils.Utils;
+import jadx.gui.utils.UiUtils;
 
 public class JRoot extends JNode {
 	private static final long serialVersionUID = 8888495789773527342L;
 
-	private static final ImageIcon ROOT_ICON = Utils.openIcon("java_model_obj");
+	private static final ImageIcon ROOT_ICON = UiUtils.openSvgIcon("nodes/rootPackageFolder");
 
 	private final transient JadxWrapper wrapper;
 
 	private transient boolean flatPackages = false;
 
+	private final List<JNode> customNodes = new ArrayList<>();
+
 	public JRoot(JadxWrapper wrapper) {
 		this.wrapper = wrapper;
-		update();
 	}
 
 	public final void update() {
 		removeAllChildren();
+		add(new JInputs(wrapper));
 		add(new JSources(this, wrapper));
 
-		List<JResource> resList = getHierarchyResources(wrapper.getResources());
-		for (JResource jRes : resList) {
-			jRes.update();
-			add(jRes);
+		List<ResourceFile> resources = wrapper.getResources();
+		if (!resources.isEmpty()) {
+			add(getHierarchyResources(resources));
 		}
-
-		JCertificate certificate = getCertificate(wrapper.getResources());
-		if (certificate != null) {
-			add(certificate);
+		for (JNode customNode : customNodes) {
+			add(customNode);
 		}
 	}
 
-	private List<JResource> getHierarchyResources(List<ResourceFile> resources) {
-		if (resources.isEmpty()) {
-			return Collections.emptyList();
-		}
+	private JResource getHierarchyResources(List<ResourceFile> resources) {
 		JResource root = new JResource(null, NLS.str("tree.resources_title"), JResType.ROOT);
 		String splitPathStr = Pattern.quote(File.separator);
 		for (ResourceFile rf : resources) {
 			String rfName;
 			if (rf.getZipRef() != null) {
-				rfName = rf.getName();
+				rfName = rf.getDeobfName();
 			} else {
-				rfName = new File(rf.getName()).getName();
+				rfName = new File(rf.getDeobfName()).getName();
 			}
 			String[] parts = new File(rfName).getPath().split(splitPathStr);
 			JResource curRf = root;
@@ -66,34 +71,20 @@ public class JRoot extends JNode {
 					if (i != count - 1) {
 						subRF = new JResource(null, name, JResType.DIR);
 					} else {
-						subRF = new JResource(rf, name, JResType.FILE);
+						subRF = new JResource(rf, rf.getDeobfName(), name, JResType.FILE);
 					}
-					curRf.getFiles().add(subRF);
+					curRf.addSubNode(subRF);
 				}
 				curRf = subRF;
 			}
 		}
-		return Collections.singletonList(root);
-	}
-
-	private JCertificate getCertificate(List<ResourceFile> resources) {
-		if (resources.isEmpty()) {
-			return null;
-		}
-		for (ResourceFile rf : resources) {
-
-			if (rf.getZipRef() != null) {
-				String rfName = rf.getName().toUpperCase();
-				if (rfName.endsWith(".DSA") || rfName.endsWith(".RSA")) {
-					return new JCertificate(rf);
-				}
-			}
-		}
-		return null;
+		root.sortSubNodes();
+		root.update();
+		return root;
 	}
 
 	private JResource getResourceByName(JResource rf, String name) {
-		for (JResource sub : rf.getFiles()) {
+		for (JResource sub : rf.getSubNodes()) {
 			if (sub.getName().equals(name)) {
 				return sub;
 			}
@@ -101,12 +92,36 @@ public class JRoot extends JNode {
 		return null;
 	}
 
-	public JNode searchClassInTree(JNode node) {
+	public @Nullable JNode searchNode(JNode node) {
 		Enumeration<?> en = this.breadthFirstEnumeration();
 		while (en.hasMoreElements()) {
 			Object obj = en.nextElement();
 			if (node.equals(obj)) {
 				return (JNode) obj;
+			}
+		}
+		return null;
+	}
+
+	public JNode followStaticPath(String... path) {
+		List<String> list = Arrays.asList(path);
+		JNode node = getNodeByClsPath(this, 0, list);
+		if (node == null) {
+			throw new JadxRuntimeException("Incorrect static path in tree: " + list);
+		}
+		return node;
+	}
+
+	private static @Nullable JNode getNodeByClsPath(JNode start, int pos, List<String> path) {
+		if (pos >= path.size()) {
+			return start;
+		}
+		String clsName = path.get(pos);
+		Enumeration<TreeNode> en = start.children();
+		while (en.hasMoreElements()) {
+			JNode node = (JNode) en.nextElement();
+			if (node.getClass().getSimpleName().equals(clsName)) {
+				return getNodeByClsPath(node, pos + 1, path);
 			}
 		}
 		return null;
@@ -123,6 +138,19 @@ public class JRoot extends JNode {
 		}
 	}
 
+	public void replaceCustomNode(@Nullable JNode node) {
+		if (node == null) {
+			return;
+		}
+		Class<?> nodeCls = node.getClass();
+		customNodes.removeIf(n -> n.getClass().equals(nodeCls));
+		customNodes.add(node);
+	}
+
+	public List<JNode> getCustomNodes() {
+		return customNodes;
+	}
+
 	@Override
 	public Icon getIcon() {
 		return ROOT_ICON;
@@ -134,13 +162,40 @@ public class JRoot extends JNode {
 	}
 
 	@Override
-	public int getLine() {
-		return 0;
+	public String makeString() {
+		JadxProject project = wrapper.getProject();
+		if (project.getProjectPath() != null) {
+			return project.getName();
+		}
+		List<Path> paths = project.getFilePaths();
+		int count = paths.size();
+		if (count == 0) {
+			return "File not open";
+		}
+		if (count == 1) {
+			Path fileNamePath = paths.get(0).getFileName();
+			if (fileNamePath != null) {
+				return fileNamePath.toString();
+			}
+			return paths.get(0).toString();
+		}
+		return count + " files";
 	}
 
 	@Override
-	public String makeString() {
-		File file = wrapper.getOpenFile();
-		return file != null ? file.getName() : "File not open";
+	public String getTooltip() {
+		List<Path> paths = wrapper.getProject().getFilePaths();
+		int count = paths.size();
+		if (count < 2) {
+			return null;
+		}
+		// Show list of loaded files (full path)
+		StringBuilder sb = new StringBuilder("<html>");
+		for (Path p : paths) {
+			sb.append(UiUtils.escapeHtml(p.toString()));
+			sb.append("<br>");
+		}
+		sb.append("</html>");
+		return sb.toString();
 	}
 }

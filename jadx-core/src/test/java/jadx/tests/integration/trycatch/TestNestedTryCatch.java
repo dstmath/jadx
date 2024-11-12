@@ -1,41 +1,36 @@
 package jadx.tests.integration.trycatch;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.not;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestNestedTryCatch extends IntegrationTest {
 
 	public static class TestCls {
-		private void f() {
+		public void test() {
 			try {
-				Thread.sleep(1);
+				Thread.sleep(1L);
 				try {
-					Thread.sleep(2);
-				} catch (InterruptedException e) {
+					Thread.sleep(2L);
+				} catch (InterruptedException ignored) {
+					System.out.println(2);
 				}
-			} catch (Exception e) {
+			} catch (Exception ignored) {
+				System.out.println(1);
 			}
-
-			return;
 		}
 	}
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsString("try {"));
-		assertThat(code, containsString("Thread.sleep(1);"));
-		assertThat(code, containsString("Thread.sleep(2);"));
-		assertThat(code, containsString("} catch (InterruptedException e) {"));
-		assertThat(code, containsString("} catch (Exception e2) {"));
-		assertThat(code, not(containsString("return")));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.contains("try {")
+				.contains("Thread.sleep(1L);")
+				.contains("Thread.sleep(2L);")
+				.contains("} catch (InterruptedException e) {")
+				.contains("} catch (Exception e2) {")
+				.doesNotContain("return");
 	}
 }

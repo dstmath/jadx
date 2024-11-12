@@ -6,7 +6,9 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import jadx.core.codegen.CodeWriter;
+import jadx.api.ICodeWriter;
+import jadx.api.impl.SimpleCodeWriter;
+import jadx.core.Consts;
 import jadx.core.codegen.InsnGen;
 import jadx.core.codegen.MethodGen;
 import jadx.core.dex.attributes.AFlag;
@@ -45,9 +47,10 @@ public class CheckRegions extends AbstractVisitor {
 				if (blocksInRegions.add(block)) {
 					return;
 				}
-				if (LOG.isDebugEnabled()
+				if (Consts.DEBUG_RESTRUCTURE
+						&& LOG.isDebugEnabled()
 						&& !block.contains(AFlag.RETURN)
-						&& !block.contains(AFlag.SKIP)
+						&& !block.contains(AFlag.REMOVE)
 						&& !block.contains(AFlag.SYNTHETIC)
 						&& !block.getInstructions().isEmpty()) {
 					LOG.debug("Duplicated block: {} - {}", mth, block);
@@ -58,18 +61,20 @@ public class CheckRegions extends AbstractVisitor {
 			for (BlockNode block : mth.getBasicBlocks()) {
 				if (!blocksInRegions.contains(block)
 						&& !block.getInstructions().isEmpty()
-						&& !block.contains(AFlag.SKIP)) {
-					String blockCode = getBlockInsnStr(mth, block);
-					mth.addWarn("Missing block: " + block + ", code:" + CodeWriter.NL + blockCode);
+						&& !block.contains(AFlag.ADDED_TO_REGION)
+						&& !block.contains(AFlag.DONT_GENERATE)
+						&& !block.contains(AFlag.REMOVE)) {
+					String blockCode = getBlockInsnStr(mth, block).replace("*/", "*\\/");
+					mth.addWarn("Code restructure failed: missing block: " + block + ", code lost:" + blockCode);
 				}
 			}
 		}
 
-		// check loop conditions
 		DepthRegionTraversal.traverse(mth, new AbstractRegionVisitor() {
 			@Override
 			public boolean enterRegion(MethodNode mth, IRegion region) {
 				if (region instanceof LoopRegion) {
+					// check loop conditions
 					BlockNode loopHeader = ((LoopRegion) region).getHeader();
 					if (loopHeader != null && loopHeader.getInstructions().size() != 1) {
 						mth.addWarn("Incorrect condition in loop: " + loopHeader);
@@ -80,9 +85,10 @@ public class CheckRegions extends AbstractVisitor {
 		});
 	}
 
-	private static String getBlockInsnStr(MethodNode mth, BlockNode block) {
-		CodeWriter code = new CodeWriter();
-		code.setIndent(3);
+	private static String getBlockInsnStr(MethodNode mth, IBlock block) {
+		ICodeWriter code = new SimpleCodeWriter();
+		code.incIndent();
+		code.newLine();
 		MethodGen mg = MethodGen.getFallbackMethodGen(mth);
 		InsnGen ig = new InsnGen(mg, true);
 		for (InsnNode insn : block.getInstructions()) {
@@ -92,8 +98,7 @@ public class CheckRegions extends AbstractVisitor {
 				// ignore
 			}
 		}
-		code.newLine().addIndent();
-		code.finish();
-		return code.toString();
+		code.newLine();
+		return code.getCodeStr();
 	}
 }

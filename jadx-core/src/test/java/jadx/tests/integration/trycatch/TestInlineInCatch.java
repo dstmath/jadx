@@ -2,13 +2,10 @@ package jadx.tests.integration.trycatch;
 
 import java.io.File;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestInlineInCatch extends IntegrationTest {
 
@@ -19,6 +16,9 @@ public class TestInlineInCatch extends IntegrationTest {
 			File output = null;
 			try {
 				output = File.createTempFile("f", "a", dir);
+				if (!output.exists()) {
+					return 1;
+				}
 				return 0;
 			} catch (Exception e) {
 				if (output != null) {
@@ -31,15 +31,14 @@ public class TestInlineInCatch extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("File output = null;"));
-		assertThat(code, containsOne("output = File.createTempFile(\"f\", \"a\", "));
-		assertThat(code, containsOne("return 0;"));
-		assertThat(code, containsOne("} catch (Exception e) {"));
-		assertThat(code, containsOne("if (output != null) {"));
-		assertThat(code, containsOne("output.delete();"));
-		assertThat(code, containsOne("return 2;"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("File output = null;")
+				.containsOne("output = File.createTempFile(\"f\", \"a\", ")
+				.containsOne("return 0;")
+				.containsOne("} catch (Exception e) {")
+				.containsOne("if (output != null) {")
+				.containsOne("output.delete();")
+				.containsOne("return 2;");
 	}
 }

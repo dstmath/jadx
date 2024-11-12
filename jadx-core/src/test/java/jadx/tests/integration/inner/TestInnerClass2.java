@@ -3,14 +3,10 @@ package jadx.tests.integration.inner;
 import java.util.Timer;
 import java.util.TimerTask;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.not;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestInnerClass2 extends IntegrationTest {
 
@@ -23,19 +19,18 @@ public class TestInnerClass2 extends IntegrationTest {
 		}
 
 		public void test() {
-			new Timer().schedule(new TerminateTask(), 1000);
+			new Timer().schedule(new TerminateTask(), 1000L);
 		}
 	}
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsString("new Timer().schedule(new TerminateTask(), 1000);"));
-		assertThat(code, not(containsString("synthetic")));
-		assertThat(code, not(containsString("this")));
-		assertThat(code, not(containsString("null")));
-		assertThat(code, not(containsString("AnonymousClass")));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.contains("new Timer().schedule(new TerminateTask(), 1000L);")
+				.doesNotContain("synthetic")
+				.doesNotContain("this")
+				.doesNotContain("null")
+				.doesNotContain("AnonymousClass");
 	}
 }

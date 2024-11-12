@@ -4,20 +4,27 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Consumer;
 
+import org.jetbrains.annotations.Nullable;
+
+import jadx.core.dex.attributes.AttrNode;
+import jadx.core.dex.instructions.ArithNode;
+import jadx.core.dex.instructions.ArithOp;
 import jadx.core.dex.instructions.IfNode;
 import jadx.core.dex.instructions.IfOp;
-import jadx.core.dex.instructions.InsnType;
+import jadx.core.dex.instructions.args.ArgType;
 import jadx.core.dex.instructions.args.InsnWrapArg;
 import jadx.core.dex.instructions.args.LiteralArg;
 import jadx.core.dex.instructions.args.RegisterArg;
 import jadx.core.dex.nodes.BlockNode;
 import jadx.core.dex.nodes.InsnNode;
+import jadx.core.utils.BlockUtils;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
-public final class IfCondition {
+public final class IfCondition extends AttrNode {
 
 	public enum Mode {
 		COMPARE,
@@ -54,10 +61,11 @@ public final class IfCondition {
 	}
 
 	public static IfCondition fromIfBlock(BlockNode header) {
-		if (header == null) {
+		InsnNode lastInsn = BlockUtils.getLastInsn(header);
+		if (lastInsn == null) {
 			return null;
 		}
-		return fromIfNode((IfNode) header.getInstructions().get(0));
+		return fromIfNode((IfNode) lastInsn);
 	}
 
 	public static IfCondition fromIfNode(IfNode insn) {
@@ -115,7 +123,7 @@ public final class IfCondition {
 			case COMPARE:
 				return new IfCondition(cond.getCompare().invert());
 			case TERNARY:
-				return ternary(not(cond.first()), cond.third(), cond.second());
+				return ternary(cond.first(), not(cond.second()), not(cond.third()));
 			case NOT:
 				return cond.first();
 			case AND:
@@ -134,15 +142,21 @@ public final class IfCondition {
 		if (cond.getMode() == Mode.NOT) {
 			return cond.first();
 		}
+		if (cond.getCompare() != null) {
+			return new IfCondition(cond.compare.invert());
+		}
 		return new IfCondition(Mode.NOT, Collections.singletonList(cond));
 	}
 
 	public static IfCondition simplify(IfCondition cond) {
 		if (cond.isCompare()) {
 			Compare c = cond.getCompare();
-			simplifyCmpOp(c);
-			if (c.getOp() == IfOp.EQ && c.getB().isLiteral() && c.getB().equals(LiteralArg.FALSE)) {
-				cond = not(new IfCondition(c.invert()));
+			IfCondition i = simplifyCmpOp(c);
+			if (i != null) {
+				return i;
+			}
+			if (c.getOp() == IfOp.EQ && c.getB().isFalse()) {
+				cond = new IfCondition(Mode.NOT, Collections.singletonList(new IfCondition(c.invert())));
 			} else {
 				c.normalize();
 			}
@@ -188,24 +202,58 @@ public final class IfCondition {
 		return cond;
 	}
 
-	private static void simplifyCmpOp(Compare c) {
+	private static IfCondition simplifyCmpOp(Compare c) {
 		if (!c.getA().isInsnWrap()) {
-			return;
+			return null;
 		}
-		if (!c.getB().isLiteral() || ((LiteralArg) c.getB()).getLiteral() != 0) {
-			return;
+		if (!c.getB().isLiteral()) {
+			return null;
 		}
+		long lit = ((LiteralArg) c.getB()).getLiteral();
+		if (lit != 0 && lit != 1) {
+			return null;
+		}
+
 		InsnNode wrapInsn = ((InsnWrapArg) c.getA()).getWrapInsn();
-		InsnType type = wrapInsn.getType();
-		if (type != InsnType.CMP_L && type != InsnType.CMP_G) {
-			return;
+		switch (wrapInsn.getType()) {
+			case CMP_L:
+			case CMP_G:
+				if (lit == 0) {
+					IfNode insn = c.getInsn();
+					insn.changeCondition(insn.getOp(), wrapInsn.getArg(0), wrapInsn.getArg(1));
+				}
+				break;
+
+			case ARITH:
+				if (c.getB().getType() == ArgType.BOOLEAN) {
+					ArithOp arithOp = ((ArithNode) wrapInsn).getOp();
+					if (arithOp == ArithOp.OR || arithOp == ArithOp.AND) {
+						IfOp ifOp = c.getInsn().getOp();
+						boolean isTrue = ifOp == IfOp.NE && lit == 0
+								|| ifOp == IfOp.EQ && lit == 1;
+
+						IfOp op = isTrue ? IfOp.NE : IfOp.EQ;
+						Mode mode = isTrue && arithOp == ArithOp.OR
+								|| !isTrue && arithOp == ArithOp.AND ? Mode.OR : Mode.AND;
+
+						IfNode if1 = new IfNode(op, -1, wrapInsn.getArg(0), LiteralArg.litFalse());
+						IfNode if2 = new IfNode(op, -1, wrapInsn.getArg(1), LiteralArg.litFalse());
+						return new IfCondition(mode,
+								Arrays.asList(new IfCondition(new Compare(if1)),
+										new IfCondition(new Compare(if2))));
+					}
+				}
+				break;
+
+			default:
+				break;
 		}
-		IfNode insn = c.getInsn();
-		insn.changeCondition(insn.getOp(), wrapInsn.getArg(0), wrapInsn.getArg(1));
+
+		return null;
 	}
 
 	public List<RegisterArg> getRegisterArgs() {
-		List<RegisterArg> list = new LinkedList<>();
+		List<RegisterArg> list = new ArrayList<>();
 		if (mode == Mode.COMPARE) {
 			compare.getInsn().getRegisterArgs(list);
 		} else {
@@ -216,6 +264,38 @@ public final class IfCondition {
 		return list;
 	}
 
+	public void visitInsns(Consumer<InsnNode> visitor) {
+		if (mode == Mode.COMPARE) {
+			compare.getInsn().visitInsns(visitor);
+		} else {
+			args.forEach(arg -> arg.visitInsns(visitor));
+		}
+	}
+
+	public List<InsnNode> collectInsns() {
+		List<InsnNode> list = new ArrayList<>();
+		visitInsns(list::add);
+		return list;
+	}
+
+	public int getSourceLine() {
+		for (InsnNode insn : collectInsns()) {
+			int line = insn.getSourceLine();
+			if (line != 0) {
+				return line;
+			}
+		}
+		return 0;
+	}
+
+	@Nullable
+	public InsnNode getFirstInsn() {
+		if (mode == Mode.COMPARE) {
+			return compare.getInsn();
+		}
+		return args.get(0).getFirstInsn();
+	}
+
 	@Override
 	public String toString() {
 		switch (mode) {
@@ -224,13 +304,13 @@ public final class IfCondition {
 			case TERNARY:
 				return first() + " ? " + second() + " : " + third();
 			case NOT:
-				return "!(" + first() + ")";
+				return "!(" + first() + ')';
 			case AND:
 			case OR:
 				String op = mode == Mode.OR ? " || " : " && ";
 				StringBuilder sb = new StringBuilder();
 				sb.append('(');
-				for (Iterator<IfCondition> it = args.iterator(); it.hasNext(); ) {
+				for (Iterator<IfCondition> it = args.iterator(); it.hasNext();) {
 					IfCondition arg = it.next();
 					sb.append(arg);
 					if (it.hasNext()) {
@@ -241,5 +321,30 @@ public final class IfCondition {
 				return sb.toString();
 		}
 		return "??";
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj) {
+			return true;
+		}
+		if (!(obj instanceof IfCondition)) {
+			return false;
+		}
+		IfCondition other = (IfCondition) obj;
+		if (mode != other.mode) {
+			return false;
+		}
+		return Objects.equals(args, other.args)
+				&& Objects.equals(compare, other.compare);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = super.hashCode();
+		result = 31 * result + mode.hashCode();
+		result = 31 * result + args.hashCode();
+		result = 31 * result + (compare != null ? compare.hashCode() : 0);
+		return result;
 	}
 }

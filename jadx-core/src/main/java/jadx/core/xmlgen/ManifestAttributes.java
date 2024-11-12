@@ -1,9 +1,10 @@
 package jadx.core.xmlgen;
 
-import javax.xml.parsers.DocumentBuilder;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -13,8 +14,17 @@ import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
+import jadx.api.security.IJadxSecurity;
 import jadx.core.utils.exceptions.JadxRuntimeException;
+import jadx.core.xmlgen.entry.RawNamedValue;
+import jadx.core.xmlgen.entry.ResourceEntry;
+import jadx.core.xmlgen.entry.ValuesParser;
 
+// TODO: move to Android specific module!
+
+/**
+ * Load and store Android Manifest attributes specification
+ */
 public class ManifestAttributes {
 	private static final Logger LOG = LoggerFactory.getLogger(ManifestAttributes.class);
 
@@ -43,26 +53,16 @@ public class ManifestAttributes {
 
 		@Override
 		public String toString() {
-			return "[" + type + ", " + values + "]";
+			return "[" + type + ", " + values + ']';
 		}
 	}
 
+	private final IJadxSecurity security;
 	private final Map<String, MAttr> attrMap = new HashMap<>();
+	private final Map<String, MAttr> appAttrMap = new HashMap<>();
 
-	private static ManifestAttributes instance;
-
-	public static ManifestAttributes getInstance() {
-		if (instance == null) {
-			try {
-				instance = new ManifestAttributes();
-			} catch (Exception e) {
-				LOG.error("Failed to create ManifestAttributes", e);
-			}
-		}
-		return instance;
-	}
-
-	private ManifestAttributes() {
+	public ManifestAttributes(IJadxSecurity security) {
+		this.security = security;
 		parseAll();
 	}
 
@@ -78,8 +78,7 @@ public class ManifestAttributes {
 			if (xmlStream == null) {
 				throw new JadxRuntimeException(xml + " not found in classpath");
 			}
-			DocumentBuilder dBuilder = XmlSecurity.getSecureDbf().newDocumentBuilder();
-			doc = dBuilder.parse(xmlStream);
+			doc = security.parseXml(xmlStream);
 		} catch (Exception e) {
 			throw new JadxRuntimeException("Xml load error, file: " + xml, e);
 		}
@@ -165,24 +164,63 @@ public class ManifestAttributes {
 	public String decode(String attrName, long value) {
 		MAttr attr = attrMap.get(attrName);
 		if (attr == null) {
-			return null;
+			attr = appAttrMap.get(attrName);
+			if (attr == null) {
+				return null;
+			}
 		}
 		if (attr.getType() == MAttrType.ENUM) {
 			return attr.getValues().get(value);
 		} else if (attr.getType() == MAttrType.FLAG) {
-			StringBuilder sb = new StringBuilder();
-			for (Map.Entry<Long, String> entry : attr.getValues().entrySet()) {
-				if (value == entry.getKey()) {
-					sb = new StringBuilder(entry.getValue() + "|");
+			List<String> flagList = new ArrayList<>();
+			List<Long> attrKeys = new ArrayList<>(attr.getValues().keySet());
+			attrKeys.sort((a, b) -> Long.compare(b, a)); // sort descending
+			for (Long key : attrKeys) {
+				String attrValue = attr.getValues().get(key);
+				if (value == key) {
+					flagList.add(attrValue);
 					break;
-				} else if ((value & entry.getKey()) == entry.getKey()) {
-					sb.append(entry.getValue()).append('|');
+				} else if ((key != 0) && ((value & key) == key)) {
+					flagList.add(attrValue);
+					value ^= key;
 				}
 			}
-			if (sb.length() != 0) {
-				return sb.deleteCharAt(sb.length() - 1).toString();
-			}
+			return String.join("|", flagList);
 		}
 		return null;
+	}
+
+	public void updateAttributes(IResTableParser parser) {
+		appAttrMap.clear();
+
+		ResourceStorage resStorage = parser.getResStorage();
+		ValuesParser vp = new ValuesParser(parser.getStrings(), resStorage.getResourcesNames());
+
+		for (ResourceEntry ri : resStorage.getResources()) {
+			if (ri.getProtoValue() != null) {
+				// Aapt proto decoder resolves attributes by itself.
+				continue;
+			}
+
+			if (ri.getTypeName().equals("attr") && ri.getNamedValues().size() > 1) {
+				RawNamedValue first = ri.getNamedValues().get(0);
+				MAttrType attrTyp;
+				int attrTypeVal = first.getRawValue().getData() & 0xff0000;
+				if (attrTypeVal == ValuesParser.ATTR_TYPE_FLAGS) {
+					attrTyp = MAttrType.FLAG;
+				} else if (attrTypeVal == ValuesParser.ATTR_TYPE_ENUM) {
+					attrTyp = MAttrType.ENUM;
+				} else {
+					continue;
+				}
+				MAttr attr = new MAttr(attrTyp);
+				for (int i = 1; i < ri.getNamedValues().size(); i++) {
+					RawNamedValue rv = ri.getNamedValues().get(i);
+					String value = vp.decodeNameRef(rv.getNameRef());
+					attr.getValues().put((long) rv.getRawValue().getData(), value.startsWith("id.") ? value.substring(3) : value);
+				}
+				appAttrMap.put(ri.getKeyName(), attr);
+			}
+		}
 	}
 }

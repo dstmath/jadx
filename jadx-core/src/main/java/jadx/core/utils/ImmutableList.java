@@ -22,7 +22,7 @@ import org.jetbrains.annotations.NotNull;
 public final class ImmutableList<E> implements List<E>, RandomAccess {
 	private final E[] arr;
 
-	@SuppressWarnings({"unchecked", "SuspiciousArrayCast"})
+	@SuppressWarnings({ "unchecked", "SuspiciousArrayCast" })
 	public ImmutableList(Collection<E> col) {
 		this((E[]) Objects.requireNonNull(col).toArray());
 	}
@@ -76,15 +76,20 @@ public final class ImmutableList<E> implements List<E>, RandomAccess {
 
 	@Override
 	public boolean containsAll(@NotNull Collection<?> c) {
-		throw new UnsupportedOperationException();
+		for (Object obj : c) {
+			if (!contains(obj)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	@NotNull
 	@Override
 	public Iterator<E> iterator() {
 		return new Iterator<E>() {
+			private final int len = arr.length;
 			private int index = 0;
-			private int len = arr.length;
 
 			@Override
 			public boolean hasNext() {
@@ -210,11 +215,26 @@ public final class ImmutableList<E> implements List<E>, RandomAccess {
 		if (this == o) {
 			return true;
 		}
-		if (o == null || getClass() != o.getClass()) {
-			return false;
+		if (o instanceof ImmutableList) {
+			ImmutableList<?> other = (ImmutableList<?>) o;
+			return Arrays.equals(arr, other.arr);
 		}
-		ImmutableList<?> that = (ImmutableList<?>) o;
-		return Arrays.equals(arr, that.arr);
+		if (o instanceof List) {
+			List<?> other = (List<?>) o;
+			int size = size();
+			if (size != other.size()) {
+				return false;
+			}
+			for (int i = 0; i < size; i++) {
+				E e1 = arr[i];
+				Object e2 = other.get(i);
+				if (!Objects.equals(e1, e2)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		return false;
 	}
 
 	@Override

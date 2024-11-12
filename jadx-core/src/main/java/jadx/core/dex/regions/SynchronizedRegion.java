@@ -1,16 +1,19 @@
 package jadx.core.dex.regions;
 
-import java.util.LinkedList;
+import java.util.ArrayList;
 import java.util.List;
 
+import jadx.api.ICodeWriter;
+import jadx.core.codegen.RegionGen;
 import jadx.core.dex.nodes.IContainer;
 import jadx.core.dex.nodes.IRegion;
 import jadx.core.dex.nodes.InsnNode;
+import jadx.core.utils.exceptions.CodegenException;
 
 public final class SynchronizedRegion extends AbstractRegion {
 
 	private final InsnNode enterInsn;
-	private final List<InsnNode> exitInsns = new LinkedList<>();
+	private final List<InsnNode> exitInsns = new ArrayList<>();
 	private final Region region;
 
 	public SynchronizedRegion(IRegion parent, InsnNode insn) {
@@ -34,6 +37,11 @@ public final class SynchronizedRegion extends AbstractRegion {
 	@Override
 	public List<IContainer> getSubBlocks() {
 		return region.getSubBlocks();
+	}
+
+	@Override
+	public void generate(RegionGen regionGen, ICodeWriter code) throws CodegenException {
+		regionGen.makeSynchronizedRegion(this, code);
 	}
 
 	@Override

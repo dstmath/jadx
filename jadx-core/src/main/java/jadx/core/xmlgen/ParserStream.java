@@ -1,15 +1,17 @@
 package jadx.core.xmlgen;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 import org.jetbrains.annotations.NotNull;
 
 public class ParserStream {
 
-	protected static final Charset STRING_CHARSET_UTF16 = Charset.forName("UTF-16LE");
-	protected static final Charset STRING_CHARSET_UTF8 = Charset.forName("UTF-8");
+	protected static final Charset STRING_CHARSET_UTF16 = StandardCharsets.UTF_16LE;
+	protected static final Charset STRING_CHARSET_UTF8 = StandardCharsets.UTF_8;
 
 	private static final int[] EMPTY_INT_ARRAY = new int[0];
 	private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
@@ -89,7 +91,7 @@ public class ParserStream {
 		long pos = input.skip(count);
 		while (pos < count) {
 			long skipped = input.skip(count - pos);
-			if (skipped == -1) {
+			if (skipped == 0) {
 				throw new IOException("No data, can't skip " + count + " bytes");
 			}
 			pos += skipped;
@@ -126,6 +128,10 @@ public class ParserStream {
 
 	public void skipToPos(long expectedOffset, String error) throws IOException {
 		long pos = getPos();
+		if (pos > expectedOffset) {
+			throw new IOException(error + ", expected offset not reachable: 0x" + Long.toHexString(expectedOffset)
+					+ ", actual: 0x" + Long.toHexString(getPos()));
+		}
 		if (pos < expectedOffset) {
 			skip(expectedOffset - pos);
 		}
@@ -141,6 +147,25 @@ public class ParserStream {
 
 	public void reset() throws IOException {
 		input.reset();
+	}
+
+	public void readFully(byte[] b) throws IOException {
+		readFully(b, 0, b.length);
+	}
+
+	public void readFully(byte[] b, int off, int len) throws IOException {
+		readPos += len;
+		if (len < 0) {
+			throw new IndexOutOfBoundsException();
+		}
+		int n = 0;
+		while (n < len) {
+			int count = input.read(b, off + n, len - n);
+			if (count < 0) {
+				throw new EOFException();
+			}
+			n += count;
+		}
 	}
 
 	@Override

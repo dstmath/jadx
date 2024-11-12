@@ -1,12 +1,10 @@
 package jadx.tests.integration.synchronize;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
 
-import static jadx.tests.api.utils.JadxMatchers.containsLines;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestSynchronized3 extends IntegrationTest {
 
@@ -20,7 +18,7 @@ public class TestSynchronized3 extends IntegrationTest {
 			while (true) {
 				synchronized (this) {
 					if (x == 0) {
-						throw new IllegalStateException("bad luck");
+						throw new IllegalStateException();
 					}
 					x++;
 					if (x == 10) {
@@ -35,9 +33,8 @@ public class TestSynchronized3 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsLines(3, "}", "this.x++;", "f();"));
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsLines(3, "}", "this.x++;", "f();");
 	}
 }

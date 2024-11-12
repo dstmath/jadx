@@ -4,23 +4,22 @@ import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
 import java.util.Map;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
 
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestGenerics2 extends IntegrationTest {
 
+	@SuppressWarnings("MismatchedQueryAndUpdateOfCollection")
 	public static class TestCls {
-		private static class ItemReference<V> extends WeakReference<V> {
-			private Object id;
+		public static class ItemReference<V> extends WeakReference<V> {
+			public Object id;
 
-			public ItemReference(V item, Object id, ReferenceQueue<? super V> queue) {
+			public ItemReference(V item, Object objId, ReferenceQueue<? super V> queue) {
 				super(item, queue);
-				this.id = id;
+				this.id = objId;
 			}
 		}
 
@@ -29,19 +28,30 @@ public class TestGenerics2 extends IntegrationTest {
 
 			public V get(Object id) {
 				WeakReference<V> ref = this.items.get(id);
-				return (ref != null) ? ref.get() : null;
+				if (ref != null) {
+					return ref.get();
+				}
+				return null;
 			}
 		}
 	}
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("public ItemReference(V item, Object objId, ReferenceQueue<? super V> queue) {")
+				.containsOne("public V get(Object id) {")
+				.containsOne("WeakReference<V> ref = ")
+				.containsOne("return ref.get();");
+	}
 
-		assertThat(code, containsString("public ItemReference(V item, Object id, ReferenceQueue<? super V> queue) {"));
-		assertThat(code, containsString("public V get(Object id) {"));
-		assertThat(code, containsString("WeakReference<V> ref = "));
-		assertThat(code, containsString("return ref != null ? ref.get() : null;"));
+	@Test
+	public void testDebug() {
+		noDebugInfo();
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("ItemReference<V> itemReference = this.items.get(obj);")
+				.containsOne("return itemReference.get();");
 	}
 }

@@ -2,13 +2,10 @@ package jadx.tests.integration.loops;
 
 import java.util.Set;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestIterableForEach3 extends IntegrationTest {
 
@@ -16,7 +13,7 @@ public class TestIterableForEach3 extends IntegrationTest {
 		private Set<T> a;
 		private Set<T> b;
 
-		private void test(T str) {
+		public void test(T str) {
 			Set<T> set = str.length() == 1 ? a : b;
 			for (T s : set) {
 				if (s.length() == str.length()) {
@@ -33,11 +30,16 @@ public class TestIterableForEach3 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("for (T s : set) {"));
-		assertThat(code, containsOne("if (str.length() == 0) {"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("for (T s : set) {")
+				.containsOne("if (str.length() == 0) {");
 		// TODO move return outside 'if'
+	}
+
+	@Test
+	public void testNoDebug() {
+		noDebugInfo();
+		getClassNode(TestCls.class);
 	}
 }

@@ -1,14 +1,15 @@
 package jadx.core.dex.regions.conditions;
 
+import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.instructions.IfNode;
 import jadx.core.dex.instructions.IfOp;
 import jadx.core.dex.instructions.args.InsnArg;
-import jadx.core.dex.instructions.args.LiteralArg;
 
 public final class Compare {
 	private final IfNode insn;
 
 	public Compare(IfNode insn) {
+		insn.add(AFlag.HIDDEN);
 		this.insn = insn;
 	}
 
@@ -33,17 +34,12 @@ public final class Compare {
 		return this;
 	}
 
-	/**
-	 * Change 'a != false' to 'a == true'
-	 */
 	public void normalize() {
-		if (getOp() == IfOp.NE && getB().isLiteral() && getB().equals(LiteralArg.FALSE)) {
-			insn.changeCondition(IfOp.EQ, getA(), LiteralArg.TRUE);
-		}
+		insn.normalize();
 	}
 
 	@Override
 	public String toString() {
-		return getA() + " " + getOp().getSymbol() + " " + getB();
+		return getA() + " " + getOp().getSymbol() + ' ' + getB();
 	}
 }

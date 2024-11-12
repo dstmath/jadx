@@ -1,50 +1,44 @@
 package jadx.gui.settings;
 
+import java.awt.Rectangle;
+
 public class WindowLocation {
+	private String windowId;
+	private Rectangle bounds;
 
-	private final String windowId;
+	// Don't remove. Used in json serialization
+	public WindowLocation() {
+	}
 
-	private final int x;
-	private final int y;
-	private final int width;
-	private final int height;
-
-	public WindowLocation(String windowId, int x, int y, int width, int height) {
+	public WindowLocation(String windowId, Rectangle bounds) {
 		this.windowId = windowId;
-		this.x = x;
-		this.y = y;
-		this.width = width;
-		this.height = height;
+		this.bounds = bounds;
 	}
 
 	public String getWindowId() {
 		return windowId;
 	}
 
-	public int getX() {
-		return x;
+	public void setWindowId(String windowId) {
+		this.windowId = windowId;
 	}
 
-	public int getY() {
-		return y;
+	public Rectangle getBounds() {
+		return bounds;
 	}
 
-	public int getWidth() {
-		return width;
-	}
-
-	public int getHeight() {
-		return height;
+	public void setBounds(Rectangle bounds) {
+		this.bounds = bounds;
 	}
 
 	@Override
 	public String toString() {
-		return "WindowLocation{" +
-				"id='" + windowId + '\'' +
-				", x=" + x +
-				", y=" + y +
-				", width=" + width +
-				", height=" + height +
-				'}';
+		return "WindowLocation{"
+				+ "id='" + windowId + '\''
+				+ ", x=" + bounds.getX()
+				+ ", y=" + bounds.getY()
+				+ ", width=" + bounds.getWidth()
+				+ ", height=" + bounds.getHeight()
+				+ '}';
 	}
 }

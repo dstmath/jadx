@@ -3,18 +3,16 @@ package jadx.tests.integration.variables;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.junit.Assert.assertThat;
-
+@SuppressWarnings("checkstyle:printstacktrace")
 public class TestVariables4 extends IntegrationTest {
 
 	public static class TestCls {
-		private static boolean runTest(String clsName) {
+		public static boolean runTest(String clsName) {
 			try {
 				boolean pass = false;
 				String msg = null;
@@ -37,7 +35,7 @@ public class TestVariables4 extends IntegrationTest {
 					msg = "not extends AbstractTest";
 				}
 				System.err.println(">> "
-						+ (pass ? "PASS" : "FAIL") + "\t"
+						+ (pass ? "PASS" : "FAIL") + '\t'
 						+ clsName
 						+ (msg == null ? "" : "\t - " + msg));
 				if (exc != null) {
@@ -58,14 +56,13 @@ public class TestVariables4 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsString("} catch (InvocationTargetException e) {"));
-		assertThat(code, containsString("pass = false;"));
-		assertThat(code, containsString("exc = e.getCause();"));
-		assertThat(code, containsString("System.err.println(\"Class '\" + clsName + \"' not found\");"));
-		assertThat(code, containsString("return pass;"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.contains("} catch (InvocationTargetException e) {")
+				.contains("pass = false;")
+				.contains("exc = e.getCause();")
+				.contains("System.err.println(\"Class '\" + clsName + \"' not found\");")
+				.contains("return pass;");
 	}
 
 	@Test

@@ -1,18 +1,15 @@
 package jadx.tests.integration.others;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
 
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static jadx.tests.api.utils.JadxMatchers.countString;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestIfTryInCatch extends IntegrationTest {
 
 	public static class TestCls {
-		private Exception exception;
+		public Exception exception;
 		private java.lang.Object data;
 
 		public java.lang.Object test(final Object obj) {
@@ -23,8 +20,8 @@ public class TestIfTryInCatch extends IntegrationTest {
 				if (a(e) && b(obj)) {
 					try {
 						return f();
-					} catch (Exception e2) {
-						e = e2;
+					} catch (Exception exc) {
+						e = exc;
 					}
 				}
 				System.out.println("Exception" + e);
@@ -48,11 +45,10 @@ public class TestIfTryInCatch extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, countString(2, "try {"));
-		assertThat(code, containsOne("if ("));
-		assertThat(code, countString(2, "return f();"));
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.countString(2, "try {")
+				.containsOne("if (")
+				.countString(2, "return f();");
 	}
 }

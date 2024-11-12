@@ -1,30 +1,26 @@
 package jadx.core.xmlgen;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.List;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 
-import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jadx.api.ResourceFile;
-import jadx.core.codegen.CodeWriter;
+import jadx.api.ResourcesLoader;
+import jadx.api.plugins.utils.ZipSecurity;
+import jadx.core.dex.visitors.SaveCode;
+import jadx.core.utils.exceptions.JadxException;
+import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.core.utils.files.FileUtils;
-import jadx.core.utils.files.ZipSecurity;
-
-import static jadx.core.utils.files.FileUtils.prepareFile;
 
 public class ResourcesSaver implements Runnable {
 	private static final Logger LOG = LoggerFactory.getLogger(ResourcesSaver.class);
 
 	private final ResourceFile resourceFile;
-	private File outDir;
+	private final File outDir;
 
 	public ResourcesSaver(File outDir, ResourceFile resourceFile) {
 		this.resourceFile = resourceFile;
@@ -33,9 +29,10 @@ public class ResourcesSaver implements Runnable {
 
 	@Override
 	public void run() {
-		ResContainer rc = resourceFile.loadContent();
-		if (rc != null) {
-			saveResources(rc);
+		try {
+			saveResources(resourceFile.loadContent());
+		} catch (Throwable e) {
+			LOG.warn("Failed to save resource: {}", resourceFile.getOriginalName(), e);
 		}
 	}
 
@@ -43,66 +40,68 @@ public class ResourcesSaver implements Runnable {
 		if (rc == null) {
 			return;
 		}
-		List<ResContainer> subFiles = rc.getSubFiles();
-		if (subFiles.isEmpty()) {
-			save(rc, outDir);
-		} else {
+		if (rc.getDataType() == ResContainer.DataType.RES_TABLE) {
 			saveToFile(rc, new File(outDir, "res/values/public.xml"));
-			for (ResContainer subFile : subFiles) {
+			for (ResContainer subFile : rc.getSubFiles()) {
 				saveResources(subFile);
 			}
+		} else {
+			save(rc, outDir);
 		}
 	}
 
 	private void save(ResContainer rc, File outDir) {
 		File outFile = new File(outDir, rc.getFileName());
-		BufferedImage image = rc.getImage();
-		if (image != null) {
-			String ext = FilenameUtils.getExtension(outFile.getName());
-			try {
-				outFile = prepareFile(outFile);
-
-				if (!ZipSecurity.isInSubDirectory(outDir, outFile)) {
-					LOG.error("Path traversal attack detected, invalid resource name: {}",
-							outFile.getPath());
-					return;
-				}
-
-				ImageIO.write(image, ext, outFile);
-			} catch (IOException e) {
-				LOG.error("Failed to save image: {}", rc.getName(), e);
-			}
-			return;
-		}
-
 		if (!ZipSecurity.isInSubDirectory(outDir, outFile)) {
-			LOG.error("Path traversal attack detected, invalid resource name: {}",
-					rc.getFileName());
+			LOG.error("Invalid resource name or path traversal attack detected: {}", outFile.getPath());
 			return;
 		}
 		saveToFile(rc, outFile);
 	}
 
 	private void saveToFile(ResContainer rc, File outFile) {
-		CodeWriter cw = rc.getContent();
-		if (cw != null) {
-			cw.save(outFile);
-			return;
-		}
-		InputStream binary = rc.getBinary();
-		if (binary != null) {
-			try {
+		switch (rc.getDataType()) {
+			case TEXT:
+			case RES_TABLE:
+				SaveCode.save(rc.getText(), outFile);
+				return;
+
+			case DECODED_DATA:
+				byte[] data = rc.getDecodedData();
 				FileUtils.makeDirsForFile(outFile);
-				try (FileOutputStream binaryFileStream = new FileOutputStream(outFile)) {
-					IOUtils.copy(binary, binaryFileStream);
-				} finally {
-					binary.close();
+				try {
+					Files.write(outFile.toPath(), data);
+				} catch (Exception e) {
+					LOG.warn("Resource '{}' not saved, got exception", rc.getName(), e);
 				}
-			} catch (Exception e) {
-				LOG.warn("Resource '{}' not saved, got exception", rc.getName(), e);
-			}
-			return;
+				return;
+
+			case RES_LINK:
+				ResourceFile resFile = rc.getResLink();
+				FileUtils.makeDirsForFile(outFile);
+				try {
+					saveResourceFile(resFile, outFile);
+				} catch (Exception e) {
+					LOG.warn("Resource '{}' not saved, got exception", rc.getName(), e);
+				}
+				return;
+
+			default:
+				LOG.warn("Resource '{}' not saved, unknown type", rc.getName());
+				break;
 		}
-		LOG.warn("Resource '{}' not saved, unknown type", rc.getName());
+	}
+
+	private void saveResourceFile(ResourceFile resFile, File outFile) throws JadxException {
+		ResourcesLoader.decodeStream(resFile, (size, is) -> {
+			Path target = outFile.toPath();
+			try {
+				Files.copy(is, target, StandardCopyOption.REPLACE_EXISTING);
+			} catch (Exception e) {
+				Files.deleteIfExists(target); // delete partially written file
+				throw new JadxRuntimeException("Resource file save error", e);
+			}
+			return null;
+		});
 	}
 }

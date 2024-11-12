@@ -1,15 +1,13 @@
 package jadx.tests.integration.arith;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.SmaliTest;
 
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.Matchers.not;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestArithNot extends SmaliTest {
+	// @formatter:off
 	/*
 	  Smali Code equivalent:
 		public static class TestCls {
@@ -22,14 +20,14 @@ public class TestArithNot extends SmaliTest {
 			}
 		}
 	*/
+	// @formatter:on
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNodeFromSmaliWithPath("arith", "TestArithNot");
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsString("return ~a;"));
-		assertThat(code, containsString("return ~b;"));
-		assertThat(code, not(containsString("^")));
+		assertThat(getClassNodeFromSmaliWithPath("arith", "TestArithNot"))
+				.code()
+				.contains("return ~a;")
+				.contains("return ~b;")
+				.doesNotContain("^");
 	}
 }

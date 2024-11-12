@@ -1,14 +1,10 @@
 package jadx.tests.integration.conditions;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
 
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.not;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertTrue;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestTernary extends IntegrationTest {
 
@@ -18,22 +14,24 @@ public class TestTernary extends IntegrationTest {
 		}
 
 		public void test2(int a) {
-			assertTrue(a == 3);
+			checkTrue(a == 3);
 		}
 
 		public int test3(int a) {
-			return a > 0 ? 1 : (a + 2) * 3;
+			return a > 0 ? a : (a + 2) * 3;
+		}
+
+		private static void checkTrue(boolean v) {
 		}
 	}
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, not(containsString("else")));
-		assertThat(code, containsString("return a != 2;"));
-		assertThat(code, containsString("assertTrue(a == 3)"));
-		assertThat(code, containsString("return a > 0 ? 1 : (a + 2) * 3;"));
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.doesNotContain("else")
+				.contains("return a != 2;")
+				.contains("checkTrue(a == 3)")
+				.contains("return a > 0 ? a : (a + 2) * 3;");
 	}
 }

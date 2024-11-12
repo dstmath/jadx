@@ -8,21 +8,32 @@ public final class ResourceEntry {
 	private final String pkgName;
 	private final String typeName;
 	private final String keyName;
+	private final String config;
 
 	private int parentRef;
+	private ProtoValue protoValue;
 	private RawValue simpleValue;
 	private List<RawNamedValue> namedValues;
-	private EntryConfig config;
 
-	public ResourceEntry(int id, String pkgName, String typeName, String keyName) {
+	public ResourceEntry(int id, String pkgName, String typeName, String keyName, String config) {
 		this.id = id;
 		this.pkgName = pkgName;
 		this.typeName = typeName;
 		this.keyName = keyName;
+		this.config = config;
 	}
 
-	public ResourceEntry(int id) {
-		this(id, "", "", "");
+	public ResourceEntry copy(String newKeyName) {
+		ResourceEntry copy = new ResourceEntry(id, pkgName, typeName, newKeyName, config);
+		copy.parentRef = this.parentRef;
+		copy.protoValue = this.protoValue;
+		copy.simpleValue = this.simpleValue;
+		copy.namedValues = this.namedValues;
+		return copy;
+	}
+
+	public ResourceEntry copyWithId() {
+		return copy(String.format("%s_res_0x%08x", keyName, id));
 	}
 
 	public int getId() {
@@ -41,12 +52,24 @@ public final class ResourceEntry {
 		return keyName;
 	}
 
+	public String getConfig() {
+		return config;
+	}
+
 	public void setParentRef(int parentRef) {
 		this.parentRef = parentRef;
 	}
 
 	public int getParentRef() {
 		return parentRef;
+	}
+
+	public ProtoValue getProtoValue() {
+		return protoValue;
+	}
+
+	public void setProtoValue(ProtoValue protoValue) {
+		this.protoValue = protoValue;
 	}
 
 	public RawValue getSimpleValue() {
@@ -65,16 +88,8 @@ public final class ResourceEntry {
 		return namedValues;
 	}
 
-	public void setConfig(EntryConfig config) {
-		this.config = config;
-	}
-
-	public EntryConfig getConfig() {
-		return config;
-	}
-
 	@Override
 	public String toString() {
-		return "  0x" + Integer.toHexString(id) + " (" + id + ")" + config + " = " + typeName + "." + keyName;
+		return "  0x" + Integer.toHexString(id) + " (" + id + ')' + config + " = " + typeName + '.' + keyName;
 	}
 }

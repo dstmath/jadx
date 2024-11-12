@@ -1,30 +1,30 @@
 package jadx.core.dex.attributes.nodes;
 
-import java.util.LinkedList;
+import java.util.ArrayList;
 import java.util.List;
 
+import jadx.api.plugins.input.data.attributes.IJadxAttribute;
 import jadx.core.dex.attributes.AType;
-import jadx.core.dex.attributes.IAttribute;
-import jadx.core.dex.instructions.args.RegisterArg;
+import jadx.core.dex.instructions.args.CodeVar;
 import jadx.core.utils.Utils;
 
 /**
  * List of variables to be declared at region start.
  */
-public class DeclareVariablesAttr implements IAttribute {
+public class DeclareVariablesAttr implements IJadxAttribute {
 
-	private final List<RegisterArg> vars = new LinkedList<>();
+	private final List<CodeVar> vars = new ArrayList<>();
 
-	public Iterable<RegisterArg> getVars() {
+	public Iterable<CodeVar> getVars() {
 		return vars;
 	}
 
-	public void addVar(RegisterArg arg) {
+	public void addVar(CodeVar arg) {
 		vars.add(arg);
 	}
 
 	@Override
-	public AType<DeclareVariablesAttr> getType() {
+	public AType<DeclareVariablesAttr> getAttrType() {
 		return AType.DECLARE_VARIABLES;
 	}
 

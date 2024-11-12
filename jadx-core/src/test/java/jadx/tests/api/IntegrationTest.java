@@ -1,239 +1,446 @@
 package jadx.tests.api;
 
+import java.io.Closeable;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.net.URISyntaxException;
-import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import jadx.api.CommentsLevel;
+import jadx.api.DecompilationMode;
+import jadx.api.ICodeInfo;
 import jadx.api.JadxArgs;
 import jadx.api.JadxDecompiler;
 import jadx.api.JadxInternalAccess;
-import jadx.core.Jadx;
-import jadx.core.ProcessClass;
-import jadx.core.codegen.CodeGen;
+import jadx.api.JavaClass;
+import jadx.api.args.GeneratedRenamesMappingFileMode;
+import jadx.api.data.IJavaNodeRef;
+import jadx.api.data.impl.JadxCodeData;
+import jadx.api.data.impl.JadxCodeRename;
+import jadx.api.data.impl.JadxNodeRef;
+import jadx.api.metadata.ICodeMetadata;
+import jadx.api.metadata.annotations.InsnCodeOffset;
 import jadx.core.dex.attributes.AFlag;
-import jadx.core.dex.attributes.AType;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.nodes.RootNode;
-import jadx.core.dex.visitors.DepthTraversal;
-import jadx.core.dex.visitors.IDexTreeVisitor;
-import jadx.core.utils.exceptions.JadxException;
+import jadx.core.utils.Utils;
+import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.core.xmlgen.ResourceStorage;
 import jadx.core.xmlgen.entry.ResourceEntry;
-import jadx.tests.api.compiler.DynamicCompiler;
-import jadx.tests.api.compiler.StaticCompiler;
+import jadx.tests.api.compiler.CompilerOptions;
+import jadx.tests.api.compiler.JavaUtils;
+import jadx.tests.api.compiler.TestCompiler;
+import jadx.tests.api.utils.TestFilesGetter;
 import jadx.tests.api.utils.TestUtils;
 
-import static jadx.core.utils.files.FileUtils.addFileToJar;
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.empty;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.not;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.apache.commons.lang3.StringUtils.leftPad;
+import static org.apache.commons.lang3.StringUtils.rightPad;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 
 public abstract class IntegrationTest extends TestUtils {
+	private static final Logger LOG = LoggerFactory.getLogger(IntegrationTest.class);
 
 	private static final String TEST_DIRECTORY = "src/test/java";
 	private static final String TEST_DIRECTORY2 = "jadx-core/" + TEST_DIRECTORY;
 
+	private static final String DEFAULT_INPUT_PLUGIN = "dx";
+	/**
+	 * Set 'TEST_INPUT_PLUGIN' env variable to use 'java' or 'dx' input in tests
+	 */
+	static final boolean USE_JAVA_INPUT = Utils.getOrElse(System.getenv("TEST_INPUT_PLUGIN"), DEFAULT_INPUT_PLUGIN).equals("java");
+
 	/**
 	 * Run auto check method if defined:
+	 *
 	 * <pre>
-	 *     public static void check()
+	 * public void check() {
+	 * }
 	 * </pre>
 	 */
-	public static final String CHECK_METHOD_NAME = "check";
+	private static final String CHECK_METHOD_NAME = "check";
 
 	protected JadxArgs args;
 
-	protected boolean deleteTmpFiles = true;
-	protected boolean withDebugInfo = true;
-	protected boolean unloadCls = true;
+	protected boolean compile;
+	private CompilerOptions compilerOptions;
+
+	private boolean saveTestJar = false;
 
 	protected Map<Integer, String> resMap = Collections.emptyMap();
 
-	protected String outDir = "test-out-tmp";
+	private boolean allowWarnInCode;
+	private boolean printLineNumbers;
+	private boolean printOffsets;
+	private boolean printDisassemble;
+	private @Nullable Boolean useJavaInput;
+	private boolean removeParentClassOnInput;
 
-	protected boolean compile = true;
-	private DynamicCompiler dynamicCompiler;
+	private @Nullable TestCompiler sourceCompiler;
+	private @Nullable TestCompiler decompiledCompiler;
 
-	public IntegrationTest() {
+	/**
+	 * Run check method on decompiled code even if source check method not found.
+	 * Useful for smali test if check method added to smali code
+	 */
+	private boolean forceDecompiledCheck = false;
+
+	protected JadxDecompiler jadxDecompiler;
+
+	@TempDir
+	Path testDir;
+
+	@BeforeEach
+	public void init() {
+		this.compile = true;
+		this.compilerOptions = new CompilerOptions();
+		this.resMap = Collections.emptyMap();
+		this.removeParentClassOnInput = true;
+		this.useJavaInput = null;
+
 		args = new JadxArgs();
-		args.setOutDir(new File(outDir));
+		args.setOutDir(testDir.toFile());
 		args.setShowInconsistentCode(true);
 		args.setThreadsCount(1);
 		args.setSkipResources(true);
+		args.setCommentsLevel(CommentsLevel.DEBUG);
+		args.setDeobfuscationOn(false);
+		args.setGeneratedRenamesMappingFileMode(GeneratedRenamesMappingFileMode.IGNORE);
+		args.setRunDebugChecks(true);
+		args.setFilesGetter(new TestFilesGetter(testDir));
+
+		// use the same values on all systems
+		args.setFsCaseSensitive(false);
+		args.setCodeNewLineStr("\n");
+		args.setCodeIndentStr(JadxArgs.DEFAULT_INDENT_STR);
+	}
+
+	@AfterEach
+	public void after() throws IOException {
+		close(jadxDecompiler);
+		close(sourceCompiler);
+		close(decompiledCompiler);
+	}
+
+	private void close(Closeable closeable) throws IOException {
+		if (closeable != null) {
+			closeable.close();
+		}
+	}
+
+	public void setOutDirSuffix(String suffix) {
+		args.setOutDir(new File(testDir.toFile(), suffix));
+	}
+
+	public String getTestName() {
+		return this.getClass().getSimpleName();
+	}
+
+	public String getTestPkg() {
+		return this.getClass().getPackage().getName().replace("jadx.tests.integration.", "");
 	}
 
 	public ClassNode getClassNode(Class<?> clazz) {
 		try {
-			File jar = getJarForClass(clazz);
-			return getClassNodeFromFile(jar, clazz.getName());
+			List<File> files = compileClass(clazz);
+			assertThat(files).as("File list is empty").isNotEmpty();
+			return getClassNodeFromFiles(files, clazz.getName());
 		} catch (Exception e) {
-			e.printStackTrace();
+			LOG.error("Failed to get class node", e);
 			fail(e.getMessage());
+			return null;
 		}
+	}
+
+	public List<ClassNode> getClassNodes(Class<?>... classes) {
+		try {
+			assertThat(classes).as("Class list is empty").isNotEmpty();
+			List<File> srcFiles = Stream.of(classes).map(this::getSourceFileForClass).collect(Collectors.toList());
+			List<File> clsFiles = compileSourceFiles(srcFiles);
+			assertThat(clsFiles).as("Class files list is empty").isNotEmpty();
+			return decompileFiles(clsFiles);
+		} catch (Exception e) {
+			LOG.error("Failed to get class node", e);
+			fail(e.getMessage());
+			return null;
+		}
+	}
+
+	public ClassNode getClassNodeFromFiles(List<File> files, String clsName) {
+		jadxDecompiler = loadFiles(files);
+		RootNode root = JadxInternalAccess.getRoot(jadxDecompiler);
+
+		ClassNode cls = root.resolveClass(clsName);
+		assertThat(cls).as("Class not found: " + clsName).isNotNull();
+		if (removeParentClassOnInput) {
+			assertThat(clsName).isEqualTo(cls.getClassInfo().getFullName());
+		} else {
+			LOG.info("Convert back to top level: {}", cls);
+			cls.getTopParentClass().decompile(); // keep correct process order
+			cls.getClassInfo().notInner(root);
+			cls.updateParentClass();
+		}
+		decompileAndCheck(cls);
+		return cls;
+	}
+
+	public List<ClassNode> decompileFiles(List<File> files) {
+		jadxDecompiler = loadFiles(files);
+		List<ClassNode> sortedClsNodes = jadxDecompiler.getDecompileScheduler()
+				.buildBatches(jadxDecompiler.getClasses())
+				.stream()
+				.flatMap(Collection::stream)
+				.map(JavaClass::getClassNode)
+				.collect(Collectors.toList());
+		decompileAndCheck(sortedClsNodes);
+		return sortedClsNodes;
+	}
+
+	@NotNull
+	public ClassNode searchTestCls(List<ClassNode> list, String shortClsName) {
+		return searchCls(list, getTestPkg() + '.' + shortClsName);
+	}
+
+	@NotNull
+	public ClassNode searchCls(List<ClassNode> list, String clsName) {
+		for (ClassNode cls : list) {
+			if (cls.getClassInfo().getFullName().equals(clsName)) {
+				return cls;
+			}
+		}
+		for (ClassNode cls : list) {
+			if (cls.getClassInfo().getShortName().equals(clsName)) {
+				return cls;
+			}
+		}
+		fail("Class not found by name " + clsName + " in list: " + list);
 		return null;
 	}
 
-	public ClassNode getClassNodeFromFile(File file, String clsName) {
-		JadxDecompiler d = null;
+	protected JadxDecompiler loadFiles(List<File> inputFiles) {
+		args.setInputFiles(inputFiles);
+		boolean useDx = !isJavaInput();
+		LOG.info(useDx ? "Using dex input" : "Using java input");
+		args.setUseDxInput(useDx);
+
+		JadxDecompiler d = new JadxDecompiler(args);
 		try {
-			args.setInputFiles(Collections.singletonList(file));
-			d = new JadxDecompiler(args);
 			d.load();
 		} catch (Exception e) {
-			e.printStackTrace();
+			LOG.error("Load failed", e);
+			d.close();
 			fail(e.getMessage());
+			return null;
 		}
 		RootNode root = JadxInternalAccess.getRoot(d);
 		insertResources(root);
+		return d;
+	}
 
-		ClassNode cls = root.searchClassByName(clsName);
-		assertThat("Class not found: " + clsName, cls, notNullValue());
-		assertThat(clsName, is(cls.getClassInfo().getFullName()));
+	protected void decompileAndCheck(ClassNode cls) {
+		decompileAndCheck(Collections.singletonList(cls));
+	}
 
-		if (unloadCls) {
-			decompile(d, cls);
-		} else {
-			decompileWithoutUnload(d, cls);
+	protected void decompileAndCheck(List<ClassNode> clsList) {
+		clsList.forEach(cls -> cls.add(AFlag.DONT_UNLOAD_CLASS)); // keep error and warning attributes
+		clsList.forEach(ClassNode::decompile);
+
+		for (ClassNode cls : clsList) {
+			System.out.println("-----------------------------------------------------------");
+			ICodeInfo code = cls.getCode();
+			if (printLineNumbers) {
+				printCodeWithLineNumbers(code);
+			} else if (printOffsets) {
+				printCodeWithOffsets(code);
+			} else {
+				System.out.println(code);
+			}
 		}
-
 		System.out.println("-----------------------------------------------------------");
-		System.out.println(cls.getCode());
-		System.out.println("-----------------------------------------------------------");
+		if (printDisassemble) {
+			clsList.forEach(this::printDisasm);
+		}
+		runChecks(clsList);
+	}
 
-		checkCode(cls);
-		compile(cls);
-		runAutoCheck(clsName);
-		return cls;
+	public void runChecks(ClassNode cls) {
+		runChecks(Collections.singletonList(cls));
+	}
+
+	protected void runChecks(List<ClassNode> clsList) {
+		clsList.forEach(cls -> checkCode(cls, allowWarnInCode));
+		compileClassNode(clsList);
+		clsList.forEach(this::runAutoCheck);
+	}
+
+	private void printDisasm(ClassNode cls) {
+		System.out.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+		System.out.println(cls.getDisassembledCode());
+		System.out.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+	}
+
+	private void printCodeWithLineNumbers(ICodeInfo code) {
+		String codeStr = code.getCodeStr();
+		Map<Integer, Integer> lineMapping = code.getCodeMetadata().getLineMapping();
+		String[] lines = codeStr.split("\\R");
+		for (int i = 0; i < lines.length; i++) {
+			String line = lines[i];
+			int curLine = i + 1;
+			String lineNumStr = "/* " + leftPad(String.valueOf(curLine), 3) + " */";
+			Integer sourceLine = lineMapping.get(curLine);
+			if (sourceLine != null) {
+				lineNumStr += " /* " + sourceLine + " */";
+			}
+			System.out.println(rightPad(lineNumStr, 20) + line);
+		}
+	}
+
+	private void printCodeWithOffsets(ICodeInfo code) {
+		String codeStr = code.getCodeStr();
+		ICodeMetadata metadata = code.getCodeMetadata();
+		int lineStartPos = 0;
+		String newLineStr = args.getCodeNewLineStr();
+		int newLineLen = newLineStr.length();
+		for (String line : codeStr.split(newLineStr)) {
+			Object ann = metadata.getAt(lineStartPos);
+			String offsetStr = "";
+			if (ann instanceof InsnCodeOffset) {
+				int offset = ((InsnCodeOffset) ann).getOffset();
+				offsetStr = "/* " + leftPad(String.valueOf(offset), 5) + " */";
+			}
+			System.out.println(rightPad(offsetStr, 12) + line);
+			lineStartPos += line.length() + newLineLen;
+		}
 	}
 
 	private void insertResources(RootNode root) {
 		if (resMap.isEmpty()) {
 			return;
 		}
-		ResourceStorage resStorage = new ResourceStorage();
+		ResourceStorage resStorage = new ResourceStorage(root.getArgs().getSecurity());
 		for (Map.Entry<Integer, String> entry : resMap.entrySet()) {
 			Integer id = entry.getKey();
 			String name = entry.getValue();
 			String[] parts = name.split("\\.");
-			resStorage.add(new ResourceEntry(id, "", parts[0], parts[1]));
+			resStorage.add(new ResourceEntry(id, "", parts[0], parts[1], ""));
 		}
 		root.processResources(resStorage);
 	}
 
-	protected void decompile(JadxDecompiler jadx, ClassNode cls) {
-		List<IDexTreeVisitor> passes = getPassesList(jadx);
-		ProcessClass.process(cls, passes, new CodeGen());
-	}
-
-	protected void decompileWithoutUnload(JadxDecompiler jadx, ClassNode cls) {
-		cls.load();
-		List<IDexTreeVisitor> passes = getPassesList(jadx);
-		for (IDexTreeVisitor visitor : passes) {
-			DepthTraversal.visit(visitor, cls);
-		}
-		generateClsCode(cls);
-		// don't unload class
-	}
-
-	private List<IDexTreeVisitor> getPassesList(JadxDecompiler jadx) {
-		RootNode root = JadxInternalAccess.getRoot(jadx);
-		List<IDexTreeVisitor> passesList = Jadx.getPassesList(jadx.getArgs());
-		passesList.forEach(pass -> {
-			try {
-				pass.init(root);
-			} catch (JadxException e) {
-				e.printStackTrace();
-				fail(e.getMessage());
-			}
-		});
-		return passesList;
-	}
-
-	protected void generateClsCode(ClassNode cls) {
-		try {
-			new CodeGen().visit(cls);
-		} catch (Exception e) {
-			e.printStackTrace();
-			fail(e.getMessage());
-		}
-	}
-
-	protected static void checkCode(ClassNode cls) {
-		assertTrue("Inconsistent cls: " + cls,
-				!cls.contains(AFlag.INCONSISTENT_CODE) && !cls.contains(AType.JADX_ERROR));
-		for (MethodNode mthNode : cls.getMethods()) {
-			assertTrue("Inconsistent method: " + mthNode,
-					!mthNode.contains(AFlag.INCONSISTENT_CODE) && !mthNode.contains(AType.JADX_ERROR));
-		}
-		assertThat(cls.getCode().toString(), not(containsString("inconsistent")));
-	}
-
-	private void runAutoCheck(String clsName) {
+	private void runAutoCheck(ClassNode cls) {
+		String clsName = cls.getClassInfo().getRawName().replace('/', '.');
 		try {
 			// run 'check' method from original class
-			Class<?> origCls;
-			try {
-				origCls = Class.forName(clsName);
-			} catch (ClassNotFoundException e) {
-				// ignore
-				return;
-			}
-			Method checkMth;
-			try {
-				checkMth = origCls.getMethod(CHECK_METHOD_NAME);
-			} catch (NoSuchMethodException e) {
-				// ignore
-				return;
-			}
-			if (!checkMth.getReturnType().equals(void.class)
-					|| !Modifier.isPublic(checkMth.getModifiers())
-					|| Modifier.isStatic(checkMth.getModifiers())) {
-				fail("Wrong 'check' method");
-				return;
-			}
-			try {
-				checkMth.invoke(origCls.newInstance());
-			} catch (InvocationTargetException ie) {
-				rethrow("Original check failed", ie);
-			}
+			boolean sourceCheckFound = runSourceAutoCheck(clsName);
+
 			// run 'check' method from decompiled class
-			try {
-				invoke("check");
-			} catch (InvocationTargetException ie) {
-				rethrow("Decompiled check failed", ie);
+			if (compile && (sourceCheckFound || forceDecompiledCheck)) {
+				runDecompiledAutoCheck(cls);
 			}
-			System.out.println("Auto check: PASSED");
 		} catch (Exception e) {
-			e.printStackTrace();
+			LOG.error("Auto check failed", e);
 			fail("Auto check exception: " + e.getMessage());
 		}
 	}
 
-	private void rethrow(String msg, InvocationTargetException ie) {
-		Throwable cause = ie.getCause();
-		if (cause instanceof AssertionError) {
+	private boolean runSourceAutoCheck(String clsName) {
+		if (sourceCompiler == null) {
+			System.out.println("Source check: no code");
+			return false;
+		}
+		Class<?> origCls;
+		try {
+			origCls = sourceCompiler.getClass(clsName);
+		} catch (ClassNotFoundException e) {
+			rethrow("Missing class: " + clsName, e);
+			return false;
+		}
+		Method checkMth;
+		try {
+			checkMth = sourceCompiler.getMethod(origCls, CHECK_METHOD_NAME, new Class[] {});
+		} catch (NoSuchMethodException e) {
+			// ignore
+			return false;
+		}
+		if (!checkMth.getReturnType().equals(void.class)
+				|| !Modifier.isPublic(checkMth.getModifiers())
+				|| Modifier.isStatic(checkMth.getModifiers())) {
+			fail("Wrong 'check' method");
+			return false;
+		}
+		try {
+			limitExecTime(() -> checkMth.invoke(origCls.getConstructor().newInstance()));
+			System.out.println("Source check: PASSED");
+			return true;
+		} catch (Throwable e) {
+			throw new JadxRuntimeException("Source check failed", e);
+		}
+	}
+
+	public void runDecompiledAutoCheck(ClassNode cls) {
+		try {
+			limitExecTime(() -> invoke(decompiledCompiler, cls.getFullName(), CHECK_METHOD_NAME));
+			System.out.println("Decompiled check: PASSED");
+		} catch (Throwable e) {
+			rethrow("Decompiled check failed", e);
+		}
+	}
+
+	private <T> T limitExecTime(Callable<T> call) {
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<T> future = executor.submit(call);
+		try {
+			return future.get(5, TimeUnit.SECONDS);
+		} catch (TimeoutException ex) {
+			future.cancel(true);
+			rethrow("Execution timeout", ex);
+		} catch (Throwable ex) {
+			rethrow(ex.getMessage(), ex);
+		} finally {
+			executor.shutdownNow();
+		}
+		return null;
+	}
+
+	public static void rethrow(String msg, Throwable e) {
+		if (e instanceof InvocationTargetException) {
+			rethrow(msg, e.getCause());
+		} else if (e instanceof ExecutionException) {
+			rethrow(msg, e.getCause());
+		} else if (e instanceof AssertionError) {
 			System.err.println(msg);
-			throw (AssertionError) cause;
+			throw (AssertionError) e;
 		} else {
-			cause.printStackTrace();
-			fail(msg + cause.getMessage());
+			throw new RuntimeException(msg, e);
 		}
 	}
 
@@ -247,145 +454,85 @@ public abstract class IntegrationTest extends TestUtils {
 		return null;
 	}
 
-	void compile(ClassNode cls) {
+	void compileClassNode(List<ClassNode> clsList) {
 		if (!compile) {
 			return;
 		}
 		try {
-			dynamicCompiler = new DynamicCompiler(cls);
-			boolean result = dynamicCompiler.compile();
-			assertTrue("Compilation failed", result);
+			// TODO: eclipse uses files or compilation units providers added in Java 9
+			compilerOptions.setUseEclipseCompiler(false);
+			decompiledCompiler = new TestCompiler(compilerOptions);
+			decompiledCompiler.compileNodes(clsList);
 			System.out.println("Compilation: PASSED");
 		} catch (Exception e) {
-			e.printStackTrace();
-			fail(e.getMessage());
+			fail(e);
 		}
 	}
 
-	public Object invoke(String method) throws Exception {
-		return invoke(method, new Class<?>[0]);
-	}
-
-	public Object invoke(String method, Class<?>[] types, Object... args) throws Exception {
-		Method mth = getReflectMethod(method, types);
-		return invoke(mth, args);
-	}
-
-	public Method getReflectMethod(String method, Class<?>... types) {
-		assertNotNull("dynamicCompiler not ready", dynamicCompiler);
-		try {
-			return dynamicCompiler.getMethod(method, types);
-		} catch (Exception e) {
-			e.printStackTrace();
-			fail(e.getMessage());
-		}
-		return null;
-	}
-
-	public Object invoke(Method mth, Object... args) throws Exception {
-		assertNotNull("dynamicCompiler not ready", dynamicCompiler);
-		assertNotNull("unknown method", mth);
-		return dynamicCompiler.invoke(mth, args);
-	}
-
-	public File getJarForClass(Class<?> cls) throws IOException {
-		String path = cls.getPackage().getName().replace('.', '/');
-		List<File> list;
-		if (!withDebugInfo) {
-			list = compileClass(cls);
-		} else {
-			list = getClassFilesWithInners(cls);
-			if (list.isEmpty()) {
-				list = compileClass(cls);
-			}
-		}
-		assertThat("File list is empty", list, not(empty()));
-
-		File temp = createTempFile(".jar");
-		try (JarOutputStream jo = new JarOutputStream(new FileOutputStream(temp))) {
-			for (File file : list) {
-				addFileToJar(jo, file, path + "/" + file.getName());
-			}
-		}
-		return temp;
-	}
-
-	protected File createTempFile(String suffix) {
-		File temp = null;
-		try {
-			temp = File.createTempFile("jadx-tmp-", System.nanoTime() + suffix);
-			if (deleteTmpFiles) {
-				temp.deleteOnExit();
-			} else {
-				System.out.println("Temporary file path: " + temp.getAbsolutePath());
-			}
-		} catch (IOException e) {
-			fail(e.getMessage());
-		}
-		return temp;
-	}
-
-	private static File createTempDir(String prefix) throws IOException {
-		File baseDir = new File(System.getProperty("java.io.tmpdir"));
-		String baseName = prefix + "-" + System.nanoTime();
-		for (int counter = 1; counter < 1000; counter++) {
-			File tempDir = new File(baseDir, baseName + counter);
-			if (tempDir.mkdir()) {
-				return tempDir;
-			}
-		}
-		throw new IOException("Failed to create temp directory");
-	}
-
-	private List<File> getClassFilesWithInners(Class<?> cls) {
-		List<File> list = new ArrayList<>();
-		String pkgName = cls.getPackage().getName();
-		URL pkgResource = ClassLoader.getSystemClassLoader().getResource(pkgName.replace('.', '/'));
-		if (pkgResource != null) {
-			try {
-				String clsName = cls.getName();
-				File directory = new File(pkgResource.toURI());
-				String[] files = directory.list();
-				for (String file : files) {
-					String fullName = pkgName + "." + file;
-					if (fullName.startsWith(clsName)) {
-						list.add(new File(directory, file));
-					}
-				}
-			} catch (URISyntaxException e) {
-				fail(e.getMessage());
-			}
-		}
-		return list;
+	public Object invoke(TestCompiler compiler, String clsFullName, String method) throws Exception {
+		assertThat(compiler).as("compiler not ready").isNotNull();
+		return compiler.invoke(clsFullName, method, new Class<?>[] {}, new Object[] {});
 	}
 
 	private List<File> compileClass(Class<?> cls) throws IOException {
-		String fileName = cls.getName();
-		int end = fileName.indexOf('$');
-		if (end != -1) {
-			fileName = fileName.substring(0, end);
+		File sourceFile = getSourceFileForClass(cls);
+		List<File> clsFiles = compileSourceFiles(Collections.singletonList(sourceFile));
+		if (removeParentClassOnInput) {
+			// remove classes which are parents for test class
+			String clsFullName = cls.getName();
+			String clsName = clsFullName.substring(clsFullName.lastIndexOf('.') + 1);
+			clsFiles.removeIf(next -> !next.getName().contains(clsName));
 		}
-		fileName = fileName.replace('.', '/') + ".java";
-		File file = new File(TEST_DIRECTORY, fileName);
-		if (!file.exists()) {
-			file = new File(TEST_DIRECTORY2, fileName);
-		}
-		assertThat("Test source file not found: " + fileName, file.exists(), is(true));
-		List<File> compileFileList = Collections.singletonList(file);
+		return clsFiles;
+	}
 
-		File outTmp = createTempDir("jadx-tmp-classes");
-		outTmp.deleteOnExit();
-		List<File> files = StaticCompiler.compile(compileFileList, outTmp, withDebugInfo);
-		// remove classes which are parents for test class
-		files.removeIf(next -> !next.getName().contains(cls.getSimpleName()));
-		for (File clsFile : files) {
-			clsFile.deleteOnExit();
+	private File getSourceFileForClass(Class<?> cls) {
+		String clsFullName = cls.getName();
+		int innerEnd = clsFullName.indexOf('$');
+		String rootClsName = innerEnd == -1 ? clsFullName : clsFullName.substring(0, innerEnd);
+		String javaFileName = rootClsName.replace('.', '/') + ".java";
+		File file = new File(TEST_DIRECTORY, javaFileName);
+		if (file.exists()) {
+			return file;
+		}
+		File file2 = new File(TEST_DIRECTORY2, javaFileName);
+		if (file2.exists()) {
+			return file2;
+		}
+		throw new JadxRuntimeException("Test source not found for class: " + clsFullName);
+	}
+
+	private List<File> compileSourceFiles(List<File> compileFileList) throws IOException {
+		Path outTmp = Files.createTempDirectory(testDir, "jadx-tmp-classes");
+		sourceCompiler = new TestCompiler(compilerOptions);
+		List<File> files = sourceCompiler.compileFiles(compileFileList, outTmp);
+		if (saveTestJar) {
+			saveToJar(files, outTmp);
 		}
 		return files;
 	}
 
+	private void saveToJar(List<File> files, Path baseDir) throws IOException {
+		Path jarFile = Files.createTempFile(testDir, "tests-" + getTestName() + '-', ".jar");
+		try (JarOutputStream jar = new JarOutputStream(Files.newOutputStream(jarFile))) {
+			for (File file : files) {
+				Path fullPath = file.toPath();
+				Path relativePath = baseDir.relativize(fullPath);
+				JarEntry entry = new JarEntry(relativePath.toString());
+				jar.putNextEntry(entry);
+				jar.write(Files.readAllBytes(fullPath));
+				jar.closeEntry();
+			}
+		}
+		LOG.info("Test jar saved to: {}", jarFile.toAbsolutePath());
+	}
+
 	public JadxArgs getArgs() {
 		return args;
+	}
+
+	public CompilerOptions getCompilerOptions() {
+		return compilerOptions;
 	}
 
 	public void setArgs(JadxArgs args) {
@@ -397,38 +544,106 @@ public abstract class IntegrationTest extends TestUtils {
 	}
 
 	protected void noDebugInfo() {
-		this.withDebugInfo = false;
+		this.compilerOptions.setIncludeDebugInfo(false);
+	}
+
+	public void useEclipseCompiler() {
+		Assumptions.assumeTrue(JavaUtils.checkJavaVersion(11), "eclipse compiler library using Java 11");
+		this.compilerOptions.setUseEclipseCompiler(true);
+	}
+
+	public void useTargetJavaVersion(int version) {
+		Assumptions.assumeTrue(JavaUtils.checkJavaVersion(version), "skip test for higher java version");
+		this.compilerOptions.setJavaVersion(version);
 	}
 
 	protected void setFallback() {
-		this.args.setFallbackMode(true);
+		disableCompilation();
+		this.args.setDecompilationMode(DecompilationMode.FALLBACK);
 	}
 
 	protected void disableCompilation() {
 		this.compile = false;
 	}
 
-	protected void dontUnloadClass() {
-		this.unloadCls = false;
+	protected void forceDecompiledCheck() {
+		this.forceDecompiledCheck = true;
 	}
 
 	protected void enableDeobfuscation() {
 		args.setDeobfuscationOn(true);
-		args.setDeobfuscationForceSave(true);
+		args.setGeneratedRenamesMappingFileMode(GeneratedRenamesMappingFileMode.IGNORE);
 		args.setDeobfuscationMinLength(2);
 		args.setDeobfuscationMaxLength(64);
 	}
 
-	// Use only for debug purpose
-	@Deprecated
-	protected void setOutputCFG() {
-		this.args.setCfgOutput(true);
-		this.args.setRawCFGOutput(true);
+	protected void allowWarnInCode() {
+		allowWarnInCode = true;
+	}
+
+	protected void printLineNumbers() {
+		printLineNumbers = true;
+	}
+
+	protected void printOffsets() {
+		printOffsets = true;
+	}
+
+	public void useJavaInput() {
+		this.useJavaInput = true;
+	}
+
+	public void useDexInput() {
+		Assumptions.assumeFalse(USE_JAVA_INPUT, "skip dex input tests");
+		this.useJavaInput = false;
+	}
+
+	public void useDexInput(String mode) {
+		useDexInput();
+		this.getArgs().getPluginOptions().put("java-convert.mode", mode);
+	}
+
+	protected boolean isJavaInput() {
+		return Utils.getOrElse(useJavaInput, USE_JAVA_INPUT);
+	}
+
+	public void keepParentClassOnInput() {
+		this.removeParentClassOnInput = false;
 	}
 
 	// Use only for debug purpose
-	@Deprecated
-	protected void notDeleteTmpJar() {
-		this.deleteTmpFiles = false;
+	protected void printDisassemble() {
+		this.printDisassemble = true;
+	}
+
+	// Use only for debug purpose
+	protected void saveTestJar() {
+		this.saveTestJar = true;
+	}
+
+	protected void addClsRename(String fullClsName, String newName) {
+		JadxNodeRef clsRef = JadxNodeRef.forCls(fullClsName);
+		getCodeData().getRenames().add(new JadxCodeRename(clsRef, newName));
+	}
+
+	protected void addMthRename(String fullClsName, String mthSignature, String newName) {
+		JadxNodeRef mthRef = new JadxNodeRef(IJavaNodeRef.RefType.METHOD, fullClsName, mthSignature);
+		getCodeData().getRenames().add(new JadxCodeRename(mthRef, newName));
+	}
+
+	protected void addFldRename(String fullClsName, String fldSignature, String newName) {
+		JadxNodeRef fldRef = new JadxNodeRef(IJavaNodeRef.RefType.FIELD, fullClsName, fldSignature);
+		getCodeData().getRenames().add(new JadxCodeRename(fldRef, newName));
+	}
+
+	protected JadxCodeData getCodeData() {
+		JadxCodeData codeData = (JadxCodeData) getArgs().getCodeData();
+		if (codeData == null) {
+			codeData = new JadxCodeData();
+			codeData.setRenames(new ArrayList<>());
+			codeData.setComments(new ArrayList<>());
+			getArgs().setCodeData(codeData);
+		}
+		return codeData;
 	}
 }

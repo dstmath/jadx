@@ -1,25 +1,23 @@
 package jadx.core.dex.instructions;
 
-import org.jetbrains.annotations.NotNull;
-
 import jadx.core.dex.instructions.args.ArgType;
-import jadx.core.dex.instructions.args.InsnArg;
-import jadx.core.dex.instructions.args.RegisterArg;
 import jadx.core.dex.nodes.InsnNode;
 
 public class NewArrayNode extends InsnNode {
 
 	private final ArgType arrType;
 
-	public NewArrayNode(@NotNull ArgType arrType, RegisterArg res, InsnArg size) {
-		super(InsnType.NEW_ARRAY, 1);
+	public NewArrayNode(ArgType arrType, int argsCount) {
+		super(InsnType.NEW_ARRAY, argsCount);
 		this.arrType = arrType;
-		setResult(res);
-		addArg(size);
 	}
 
 	public ArgType getArrayType() {
 		return arrType;
+	}
+
+	public int getDimension() {
+		return arrType.getArrayDimension();
 	}
 
 	@Override
@@ -32,6 +30,11 @@ public class NewArrayNode extends InsnNode {
 		}
 		NewArrayNode other = (NewArrayNode) obj;
 		return arrType == other.arrType;
+	}
+
+	@Override
+	public InsnNode copy() {
+		return copyCommonParams(new NewArrayNode(arrType, getArgsCount()));
 	}
 
 	@Override

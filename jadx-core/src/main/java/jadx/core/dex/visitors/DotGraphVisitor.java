@@ -1,11 +1,13 @@
 package jadx.core.dex.visitors;
 
 import java.io.File;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import jadx.core.codegen.CodeWriter;
+import jadx.api.ICodeWriter;
+import jadx.api.impl.SimpleCodeWriter;
 import jadx.core.codegen.MethodGen;
 import jadx.core.dex.attributes.IAttributeNode;
 import jadx.core.dex.instructions.IfNode;
@@ -23,10 +25,13 @@ import jadx.core.utils.RegionUtils;
 import jadx.core.utils.StringUtils;
 import jadx.core.utils.Utils;
 
+import static jadx.core.codegen.MethodGen.FallbackOption.BLOCK_DUMP;
+
 public class DotGraphVisitor extends AbstractVisitor {
 
 	private static final String NL = "\\l";
 	private static final boolean PRINT_DOMINATORS = false;
+	private static final boolean PRINT_DOMINATORS_INFO = false;
 
 	private final boolean useRegions;
 	private final boolean rawInsn;
@@ -53,6 +58,11 @@ public class DotGraphVisitor extends AbstractVisitor {
 	}
 
 	@Override
+	public String getName() {
+		return "DotGraphVisitor";
+	}
+
+	@Override
 	public void visit(MethodNode mth) {
 		if (mth.isNoCode()) {
 			return;
@@ -69,8 +79,8 @@ public class DotGraphVisitor extends AbstractVisitor {
 	}
 
 	private class DumpDotGraph {
-		private final CodeWriter dot = new CodeWriter();
-		private final CodeWriter conn = new CodeWriter();
+		private final ICodeWriter dot = new SimpleCodeWriter();
+		private final ICodeWriter conn = new SimpleCodeWriter();
 		private final File dir;
 
 		public DumpDotGraph(File dir) {
@@ -82,22 +92,39 @@ public class DotGraphVisitor extends AbstractVisitor {
 			dot.add(escape(mth.getParentClass() + "." + mth.getMethodInfo().getShortId()));
 			dot.add("\" {");
 
+			BlockNode enterBlock = mth.getEnterBlock();
 			if (useRegions) {
 				if (mth.getRegion() == null) {
 					return;
 				}
 				processMethodRegion(mth);
 			} else {
-				for (BlockNode block : mth.getBasicBlocks()) {
+				List<BlockNode> blocks = mth.getBasicBlocks();
+				if (blocks == null) {
+					InsnNode[] insnArr = mth.getInstructions();
+					if (insnArr == null) {
+						return;
+					}
+					BlockNode block = new BlockNode(0, 0, 0);
+					List<InsnNode> insnList = block.getInstructions();
+					for (InsnNode insn : insnArr) {
+						if (insn != null) {
+							insnList.add(insn);
+						}
+					}
+					enterBlock = block;
+					blocks = Collections.singletonList(block);
+				}
+				for (BlockNode block : blocks) {
 					processBlock(mth, block, false);
 				}
 			}
 
 			dot.startLine("MethodNode[shape=record,label=\"{");
-			dot.add(escape(mth.getAccessFlags().makeString()));
+			dot.add(escape(mth.getAccessFlags().makeString(true)));
 			dot.add(escape(mth.getReturnType() + " "
-					+ mth.getParentClass() + "." + mth.getName()
-					+ "(" + Utils.listToString(mth.getArguments(true)) + ") "));
+					+ mth.getParentClass() + '.' + mth.getName()
+					+ '(' + Utils.listToString(mth.getAllArgRegs()) + ") "));
 
 			String attrs = attributesString(mth);
 			if (!attrs.isEmpty()) {
@@ -105,7 +132,7 @@ public class DotGraphVisitor extends AbstractVisitor {
 			}
 			dot.add("}\"];");
 
-			dot.startLine("MethodNode -> ").add(makeName(mth.getEnterBlock())).add(';');
+			dot.startLine("MethodNode -> ").add(makeName(enterBlock)).add(';');
 
 			dot.add(conn.toString());
 
@@ -116,7 +143,11 @@ public class DotGraphVisitor extends AbstractVisitor {
 					+ (useRegions ? ".regions" : "")
 					+ (rawInsn ? ".raw" : "")
 					+ ".dot";
-			dot.save(dir, mth.getParentClass().getClassInfo().getFullPath() + "_graphs", fileName);
+			File file = dir.toPath()
+					.resolve(mth.getParentClass().getClassInfo().getAliasFullPath() + "_graphs")
+					.resolve(fileName)
+					.toFile();
+			SaveCode.save(dot.finish(), file);
 		}
 
 		private void processMethodRegion(MethodNode mth) {
@@ -178,6 +209,16 @@ public class DotGraphVisitor extends AbstractVisitor {
 			if (!attrs.isEmpty()) {
 				dot.add('|').add(attrs);
 			}
+			if (PRINT_DOMINATORS_INFO) {
+				dot.add('|');
+				dot.startLine("doms: ").add(escape(block.getDoms()));
+				dot.startLine("\\lidom: ").add(escape(block.getIDom()));
+				dot.startLine("\\lpost-doms: ").add(escape(block.getPostDoms()));
+				dot.startLine("\\lpost-idom: ").add(escape(block.getIPostDom()));
+				dot.startLine("\\ldom-f: ").add(escape(block.getDomFrontier()));
+				dot.startLine("\\ldoms-on: ").add(escape(Utils.listToString(block.getDominatesOn())));
+				dot.startLine("\\l");
+			}
 			String insns = insertInsns(mth, block);
 			if (!insns.isEmpty()) {
 				dot.add('|').add(insns);
@@ -185,9 +226,9 @@ public class DotGraphVisitor extends AbstractVisitor {
 			dot.add("}\"];");
 
 			BlockNode falsePath = null;
-			List<InsnNode> list = block.getInstructions();
-			if (!list.isEmpty() && list.get(0).getType() == InsnType.IF) {
-				falsePath = ((IfNode) list.get(0)).getElseBlock();
+			InsnNode lastInsn = BlockUtils.getLastInsn(block);
+			if (lastInsn != null && lastInsn.getType() == InsnType.IF) {
+				falsePath = ((IfNode) lastInsn).getElseBlock();
 			}
 			for (BlockNode next : block.getSuccessors()) {
 				String style = next == falsePath ? "[style=dashed]" : "";
@@ -241,31 +282,37 @@ public class DotGraphVisitor extends AbstractVisitor {
 			if (c instanceof BlockNode) {
 				name = "Node_" + ((BlockNode) c).getId();
 			} else if (c instanceof IBlock) {
-				name = "Node_" + c.getClass().getSimpleName() + "_" + c.hashCode();
+				name = "Node_" + c.getClass().getSimpleName() + '_' + c.hashCode();
 			} else {
-				name = "cluster_" + c.getClass().getSimpleName() + "_" + c.hashCode();
+				name = "cluster_" + c.getClass().getSimpleName() + '_' + c.hashCode();
 			}
 			return name;
 		}
 
 		private String insertInsns(MethodNode mth, IBlock block) {
 			if (rawInsn) {
-				StringBuilder str = new StringBuilder();
+				StringBuilder sb = new StringBuilder();
 				for (InsnNode insn : block.getInstructions()) {
-					str.append(escape(insn + " " + insn.getAttributesString()));
-					str.append(NL);
+					sb.append(escape(insn)).append(NL);
 				}
-				return str.toString();
+				return sb.toString();
 			} else {
-				CodeWriter code = new CodeWriter();
+				ICodeWriter code = new SimpleCodeWriter();
 				List<InsnNode> instructions = block.getInstructions();
-				MethodGen.addFallbackInsns(code, mth, instructions.toArray(new InsnNode[0]), false);
+				MethodGen.addFallbackInsns(code, mth, instructions.toArray(new InsnNode[0]), BLOCK_DUMP);
 				String str = escape(code.newLine().toString());
 				if (str.startsWith(NL)) {
 					str = str.substring(NL.length());
 				}
 				return str;
 			}
+		}
+
+		private String escape(Object obj) {
+			if (obj == null) {
+				return "null";
+			}
+			return escape(obj.toString());
 		}
 
 		private String escape(String string) {
@@ -277,7 +324,7 @@ public class DotGraphVisitor extends AbstractVisitor {
 					.replace("\"", "\\\"")
 					.replace("-", "\\-")
 					.replace("|", "\\|")
-					.replace("\n", NL);
+					.replaceAll("\\R", NL);
 		}
 	}
 }

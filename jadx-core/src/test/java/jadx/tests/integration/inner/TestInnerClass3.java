@@ -1,13 +1,10 @@
 package jadx.tests.integration.inner;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
 
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.not;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestInnerClass3 extends IntegrationTest {
 
@@ -28,12 +25,11 @@ public class TestInnerClass3 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, not(containsString("synthetic")));
-		assertThat(code, not(containsString("access$")));
-		assertThat(code, not(containsString("x0")));
-		assertThat(code, containsString("setC(\"c\");"));
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.doesNotContain("synthetic")
+				.doesNotContain("access$")
+				.doesNotContain("x0")
+				.contains("setC(\"c\");");
 	}
 }

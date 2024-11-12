@@ -3,14 +3,12 @@ package jadx.tests.integration.inline;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.junit.Assert.assertThat;
-
+@SuppressWarnings("checkstyle:printstacktrace")
 public class TestIssue86 extends IntegrationTest {
 
 	public static class TestCls {
@@ -24,13 +22,13 @@ public class TestIssue86 extends IntegrationTest {
 		private static final String WEATHER_TAG = "weather-tag";
 		private static final String DESC_TAG = "desc-tag";
 
-		private List<Day> test(String response) {
+		public List<Day> test(String response) {
 			List<Day> reportList = new ArrayList<>();
 			try {
 				System.out.println(response);
 				if (response != null
 						&& (response.startsWith(SERVER_ERR)
-						|| response.startsWith(NOT_FOUND))) {
+								|| response.startsWith(NOT_FOUND))) {
 					return reportList;
 				}
 				JSONObject jsonObj = new JSONObject(response);
@@ -108,9 +106,8 @@ public class TestIssue86 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("response.startsWith(NOT_FOUND)"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("response.startsWith(NOT_FOUND)");
 	}
 }

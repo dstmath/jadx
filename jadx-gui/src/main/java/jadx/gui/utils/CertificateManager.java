@@ -21,8 +21,8 @@ public class CertificateManager {
 	private static final Logger LOG = LoggerFactory.getLogger(CertificateManager.class);
 	private static final String CERTIFICATE_TYPE_NAME = "X.509";
 
+	private final Certificate cert;
 	private X509Certificate x509cert;
-	private Certificate cert;
 
 	public static String decode(InputStream in) {
 		StringBuilder strBuild = new StringBuilder();
@@ -54,7 +54,7 @@ public class CertificateManager {
 		}
 	}
 
-	String generateHeader() {
+	public String generateHeader() {
 		StringBuilder builder = new StringBuilder();
 		append(builder, NLS.str("certificate.cert_type"), x509cert.getType());
 		append(builder, NLS.str("certificate.serialSigVer"), ((Integer) x509cert.getVersion()).toString());
@@ -70,14 +70,14 @@ public class CertificateManager {
 		return builder.toString();
 	}
 
-	String generateSignature() {
+	public String generateSignature() {
 		StringBuilder builder = new StringBuilder();
 		append(builder, NLS.str("certificate.serialSigType"), x509cert.getSigAlgName());
 		append(builder, NLS.str("certificate.serialSigOID"), x509cert.getSigAlgOID());
 		return builder.toString();
 	}
 
-	String generateFingerprint() {
+	public String generateFingerprint() {
 		StringBuilder builder = new StringBuilder();
 		try {
 			append(builder, NLS.str("certificate.serialMD5"), getThumbPrint(x509cert, "MD5"));
@@ -89,7 +89,7 @@ public class CertificateManager {
 		return builder.toString();
 	}
 
-	String generatePublicKey() {
+	public String generatePublicKey() {
 		PublicKey publicKey = x509cert.getPublicKey();
 		if (publicKey instanceof RSAPublicKey) {
 			return generateRSAPublicKey();
@@ -106,6 +106,8 @@ public class CertificateManager {
 
 		append(builder, NLS.str("certificate.serialPubKeyType"), pub.getAlgorithm());
 		append(builder, NLS.str("certificate.serialPubKeyExponent"), pub.getPublicExponent().toString(10));
+		append(builder, NLS.str("certificate.serialPubKeyModulusSize"), Integer.toString(
+				pub.getModulus().toString(2).length()));
 		append(builder, NLS.str("certificate.serialPubKeyModulus"), pub.getModulus().toString(10));
 
 		return builder.toString();
@@ -120,23 +122,23 @@ public class CertificateManager {
 		return builder.toString();
 	}
 
-	String generateTextForX509() {
+	public String generateTextForX509() {
 		StringBuilder builder = new StringBuilder();
 		if (x509cert != null) {
 			builder.append(generateHeader());
-			builder.append("\n");
+			builder.append('\n');
 
 			builder.append(generatePublicKey());
-			builder.append("\n");
+			builder.append('\n');
 
 			builder.append(generateSignature());
-			builder.append("\n");
+			builder.append('\n');
 			builder.append(generateFingerprint());
 		}
 		return builder.toString();
 	}
 
-	private String generateText() {
+	public String generateText() {
 		StringBuilder str = new StringBuilder();
 		String type = cert.getType();
 		if (type.equals(CERTIFICATE_TYPE_NAME)) {
@@ -148,12 +150,12 @@ public class CertificateManager {
 	}
 
 	static void append(StringBuilder str, String name, String value) {
-		str.append(name).append(": ").append(value).append("\n");
+		str.append(name).append(": ").append(value).append('\n');
 	}
 
 	public static String getThumbPrint(X509Certificate cert, String type)
 			throws NoSuchAlgorithmException, CertificateEncodingException {
-		MessageDigest md = MessageDigest.getInstance(type);
+		MessageDigest md = MessageDigest.getInstance(type); // lgtm [java/weak-cryptographic-algorithm]
 		byte[] der = cert.getEncoded();
 		md.update(der);
 		byte[] digest = md.digest();
@@ -161,7 +163,7 @@ public class CertificateManager {
 	}
 
 	public static String hexify(byte[] bytes) {
-		char[] hexDigits = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
+		char[] hexDigits = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
 		StringBuilder buf = new StringBuilder(bytes.length * 3);
 		for (byte aByte : bytes) {
 			buf.append(hexDigits[(aByte & 0xf0) >> 4]);

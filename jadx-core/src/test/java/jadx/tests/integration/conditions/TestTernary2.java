@@ -1,34 +1,43 @@
 package jadx.tests.integration.conditions;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
+import jadx.NotYetImplemented;
 import jadx.tests.api.IntegrationTest;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestTernary2 extends IntegrationTest {
 
 	public static class TestCls {
 
 		public void test() {
-			assertTrue(f(1, 0) == 0);
+			checkFalse(f(1, 0) == 0);
 		}
 
 		private int f(int a, int b) {
 			return a + b;
 		}
+
+		private void checkFalse(boolean b) {
+			if (b) {
+				throw new AssertionError("Must be false");
+			}
+		}
 	}
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("f(1, 0)");
+	}
 
-		assertEquals(1, count(code, "assertTrue"));
-		assertEquals(1, count(code, "f(1, 0)"));
-		// TODO:
-//		assertThat(code, containsString("assertTrue(f(1, 0) == 0);"));
+	@Test
+	@NotYetImplemented
+	public void test2() {
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.contains("assertTrue(f(1, 0) == 0);");
 	}
 }

@@ -1,39 +1,51 @@
 package jadx.core.utils;
 
 import java.io.File;
-import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-import org.jetbrains.annotations.TestOnly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import jadx.core.codegen.CodeWriter;
+import jadx.api.ICodeWriter;
+import jadx.api.impl.SimpleCodeWriter;
+import jadx.core.codegen.ConditionGen;
 import jadx.core.codegen.InsnGen;
 import jadx.core.codegen.MethodGen;
 import jadx.core.dex.attributes.AType;
-import jadx.core.dex.attributes.nodes.PhiListAttr;
-import jadx.core.dex.instructions.InsnType;
-import jadx.core.dex.instructions.PhiInsn;
-import jadx.core.dex.instructions.args.InsnArg;
-import jadx.core.dex.instructions.args.RegisterArg;
-import jadx.core.dex.instructions.args.SSAVar;
+import jadx.core.dex.attributes.IAttributeNode;
+import jadx.core.dex.attributes.nodes.MethodOverrideAttr;
 import jadx.core.dex.nodes.BlockNode;
 import jadx.core.dex.nodes.IBlock;
 import jadx.core.dex.nodes.IContainer;
 import jadx.core.dex.nodes.IRegion;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
+import jadx.core.dex.nodes.RootNode;
+import jadx.core.dex.regions.Region;
+import jadx.core.dex.regions.conditions.IfCondition;
+import jadx.core.dex.regions.loops.LoopRegion;
+import jadx.core.dex.visitors.AbstractVisitor;
 import jadx.core.dex.visitors.DotGraphVisitor;
+import jadx.core.dex.visitors.IDexTreeVisitor;
 import jadx.core.dex.visitors.regions.DepthRegionTraversal;
 import jadx.core.dex.visitors.regions.TracedRegionVisitor;
 import jadx.core.utils.exceptions.CodegenException;
-import jadx.core.utils.exceptions.JadxRuntimeException;
+import jadx.core.utils.exceptions.JadxException;
 
-@Deprecated
-@TestOnly
+/**
+ * Use these methods only for debug purpose.
+ * CheckStyle will reject usage of this class.
+ */
 public class DebugUtils {
 	private static final Logger LOG = LoggerFactory.getLogger(DebugUtils.class);
 
@@ -41,7 +53,42 @@ public class DebugUtils {
 	}
 
 	public static void dump(MethodNode mth) {
-		dump(mth, "");
+		dump(mth, "dump");
+	}
+
+	public static void dumpRaw(MethodNode mth, String desc, Predicate<MethodNode> dumpCondition) {
+		if (dumpCondition.test(mth)) {
+			dumpRaw(mth, desc);
+		}
+	}
+
+	public static void dumpRawTest(MethodNode mth, String desc) {
+		dumpRaw(mth, desc, method -> method.getName().equals("test"));
+	}
+
+	public static void dumpRaw(MethodNode mth, String desc) {
+		File out = new File("test-graph-" + desc + "-tmp");
+		DotGraphVisitor.dumpRaw().save(out, mth);
+	}
+
+	public static IDexTreeVisitor dumpRawVisitor(String desc) {
+		return new AbstractVisitor() {
+			@Override
+			public void visit(MethodNode mth) throws JadxException {
+				dumpRaw(mth, desc);
+			}
+		};
+	}
+
+	public static IDexTreeVisitor dumpRawVisitor(String desc, Predicate<MethodNode> filter) {
+		return new AbstractVisitor() {
+			@Override
+			public void visit(MethodNode mth) {
+				if (filter.test(mth)) {
+					dumpRaw(mth, desc);
+				}
+			}
+		};
 	}
 
 	public static void dump(MethodNode mth, String desc) {
@@ -64,133 +111,164 @@ public class DebugUtils {
 		LOG.debug(" Found block: {} in regions: {}", block, regions);
 	}
 
+	public static IDexTreeVisitor printRegionsVisitor() {
+		return new AbstractVisitor() {
+			@Override
+			public void visit(MethodNode mth) throws JadxException {
+				printRegions(mth, true);
+			}
+		};
+	}
+
 	public static void printRegions(MethodNode mth) {
 		printRegions(mth, false);
 	}
 
-	public static void printRegion(MethodNode mth, IRegion region, boolean printInsn) {
-		printRegion(mth, region, "", printInsn);
-	}
-
 	public static void printRegions(MethodNode mth, boolean printInsns) {
-		LOG.debug("|{}", mth);
-		printRegion(mth, mth.getRegion(), "|  ", printInsns);
+		Region mthRegion = mth.getRegion();
+		if (mthRegion == null) {
+			return;
+		}
+		printRegion(mth, mthRegion, printInsns);
 	}
 
-	private static void printRegion(MethodNode mth, IRegion region, String indent, boolean printInsns) {
-		LOG.debug("{}{} {}", indent, region, region.getAttributesString());
+	public static void printRegion(MethodNode mth, IRegion region, boolean printInsns) {
+		ICodeWriter cw = new SimpleCodeWriter();
+		cw.startLine('|').add(mth.toString());
+		printRegion(mth, region, cw, "|  ", printInsns);
+		LOG.debug("{}{}", '\n', cw.finish().getCodeStr());
+	}
+
+	private static void printRegion(MethodNode mth, IRegion region, ICodeWriter cw, String indent, boolean printInsns) {
+		printWithAttributes(cw, indent, region.toString(), region);
 		indent += "|  ";
+		printRegionSpecificInfo(cw, indent, mth, region, printInsns);
 		for (IContainer container : region.getSubBlocks()) {
 			if (container instanceof IRegion) {
-				printRegion(mth, (IRegion) container, indent, printInsns);
+				printRegion(mth, (IRegion) container, cw, indent, printInsns);
 			} else {
-				LOG.debug("{}{} {}", indent, container, container.getAttributesString());
+				printWithAttributes(cw, indent, container.toString(), container);
 				if (printInsns && container instanceof IBlock) {
 					IBlock block = (IBlock) container;
-					printInsns(mth, indent, block);
+					printInsns(mth, cw, indent, block);
 				}
 			}
 		}
 	}
 
-	private static void printInsns(MethodNode mth, String indent, IBlock block) {
+	private static void printRegionSpecificInfo(ICodeWriter cw, String indent,
+			MethodNode mth, IRegion region, boolean printInsns) {
+		if (region instanceof LoopRegion) {
+			LoopRegion loop = (LoopRegion) region;
+			IfCondition condition = loop.getCondition();
+			if (printInsns && condition != null) {
+				ConditionGen conditionGen = new ConditionGen(new InsnGen(MethodGen.getFallbackMethodGen(mth), true));
+				cw.startLine(indent).add("|> ");
+				try {
+					conditionGen.add(cw, condition);
+				} catch (Exception e) {
+					cw.startLine(indent).add(">!! ").add(condition.toString());
+				}
+			}
+		}
+	}
+
+	private static void printInsns(MethodNode mth, ICodeWriter cw, String indent, IBlock block) {
 		for (InsnNode insn : block.getInstructions()) {
 			try {
 				MethodGen mg = MethodGen.getFallbackMethodGen(mth);
 				InsnGen ig = new InsnGen(mg, true);
-				CodeWriter code = new CodeWriter();
+				ICodeWriter code = new SimpleCodeWriter();
 				ig.makeInsn(insn, code);
-				String insnStr = code.toString().substring(CodeWriter.NL.length());
-				LOG.debug("{}> {}\t{}", indent, insnStr, insn.getAttributesString());
+				String codeStr = code.getCodeStr();
+
+				List<String> insnStrings = Stream.of(codeStr.split("\\R"))
+						.filter(StringUtils::notBlank)
+						.map(s -> "|> " + s)
+						.collect(Collectors.toList());
+				Iterator<String> it = insnStrings.iterator();
+				while (true) {
+					String insnStr = it.next();
+					if (it.hasNext()) {
+						cw.startLine(indent).add(insnStr);
+					} else {
+						printWithAttributes(cw, indent, insnStr, insn);
+						break;
+					}
+				}
 			} catch (CodegenException e) {
-				LOG.debug("{}>!! {}", indent, insn);
+				cw.startLine(indent).add(">!! ").add(insn.toString());
 			}
 		}
 	}
 
-	public static void checkSSA(MethodNode mth) {
-		for (BlockNode block : mth.getBasicBlocks()) {
-			for (InsnNode insn : block.getInstructions()) {
-				if (insn.getResult() != null) {
-					checkSSAVar(mth, insn, insn.getResult());
-				}
-				for (InsnArg arg : insn.getArguments()) {
-					if (arg instanceof RegisterArg) {
-						checkSSAVar(mth, insn, (RegisterArg) arg);
-					}
-				}
-			}
+	private static void printWithAttributes(ICodeWriter cw, String indent, String codeStr, IAttributeNode attrNode) {
+		String str = attrNode.isAttrStorageEmpty() ? codeStr : codeStr + ' ' + attrNode.getAttributesString();
+		List<String> attrStrings = Stream.of(str.split("\\R"))
+				.filter(StringUtils::notBlank)
+				.collect(Collectors.toList());
+		Iterator<String> it = attrStrings.iterator();
+		if (!it.hasNext()) {
+			return;
 		}
-		checkPHI(mth);
-	}
-
-	private static void checkSSAVar(MethodNode mth, InsnNode insn, RegisterArg reg) {
-		SSAVar sVar = reg.getSVar();
-		if (sVar == null) {
-			throw new JadxRuntimeException("Null SSA var in " + insn + ", mth: " + mth);
-		}
-		for (RegisterArg useArg : sVar.getUseList()) {
-			InsnNode parentInsn = useArg.getParentInsn();
-			if (parentInsn != null && !parentInsn.containsArg(useArg)) {
-				throw new JadxRuntimeException("Incorrect use info in PHI insn");
-			}
+		cw.startLine(indent).add(it.next());
+		while (it.hasNext()) {
+			cw.startLine(indent).add("|+  ").add(it.next());
 		}
 	}
 
-	private static void checkPHI(MethodNode mth) {
-		for (BlockNode block : mth.getBasicBlocks()) {
-			List<PhiInsn> phis = new ArrayList<>();
-			for (InsnNode insn : block.getInstructions()) {
-				if (insn.getType() == InsnType.PHI) {
-					PhiInsn phi = (PhiInsn) insn;
-					phis.add(phi);
-					if (phi.getArgsCount() != phi.getBlockBinds().size()) {
-						throw new JadxRuntimeException("Incorrect args and binds in PHI");
-					}
-					if (phi.getArgsCount() == 0) {
-						throw new JadxRuntimeException("No args and binds in PHI");
-					}
-					for (InsnArg arg : insn.getArguments()) {
-						if (arg instanceof RegisterArg) {
-							BlockNode b = phi.getBlockByArg((RegisterArg) arg);
-							if (b == null) {
-								throw new JadxRuntimeException("Predecessor block not found");
-							}
-						} else {
-							throw new JadxRuntimeException("Not register in phi insn");
-						}
-					}
-				}
-			}
-			PhiListAttr phiListAttr = block.get(AType.PHI_LIST);
-			if (phiListAttr == null) {
-				if (!phis.isEmpty()) {
-					throw new JadxRuntimeException("Missing PHI list attribute");
-				}
-			} else {
-				List<PhiInsn> phiList = phiListAttr.getList();
-				if (phiList.isEmpty()) {
-					throw new JadxRuntimeException("Empty PHI list attribute");
-				}
-				if (!phis.containsAll(phiList) || !phiList.containsAll(phis)) {
-					throw new JadxRuntimeException("Instructions not match");
-				}
-			}
+	public static void printMap(Map<?, ?> map, String desc) {
+		LOG.debug("Map {} (size = {}):", desc, map.size());
+		for (Map.Entry<?, ?> entry : map.entrySet()) {
+			LOG.debug("  {}: {}", entry.getKey(), entry.getValue());
 		}
-		for (SSAVar ssaVar : mth.getSVars()) {
-			PhiInsn usedInPhi = ssaVar.getUsedInPhi();
-			if (usedInPhi != null) {
-				boolean found = false;
-				for (RegisterArg useArg : ssaVar.getUseList()) {
-					InsnNode parentInsn = useArg.getParentInsn();
-					if (parentInsn != null && parentInsn == usedInPhi) {
-						found = true;
-					}
-				}
-				if (!found) {
-					throw new JadxRuntimeException("Used in phi incorrect");
-				}
-			}
-		}
+	}
+
+	public static void printStackTrace(String label) {
+		LOG.debug("StackTrace: {}\n{}", label, Utils.getFullStackTrace(new Exception()));
+	}
+
+	public static void printMethodOverrideTop(RootNode root) {
+		LOG.debug("Methods override top 10:");
+		root.getClasses().stream()
+				.flatMap(c -> c.getMethods().stream())
+				.filter(m -> m.contains(AType.METHOD_OVERRIDE))
+				.map(m -> m.get(AType.METHOD_OVERRIDE))
+				.filter(o -> !o.getOverrideList().isEmpty())
+				.filter(distinctByKey(methodOverrideAttr -> methodOverrideAttr.getRelatedMthNodes().size()))
+				.filter(distinctByKey(MethodOverrideAttr::getRelatedMthNodes))
+				.sorted(Comparator.comparingInt(o -> -o.getRelatedMthNodes().size()))
+				.limit(10)
+				.forEach(o -> LOG.debug("  {} : {}", o.getRelatedMthNodes().size(), Utils.last(o.getOverrideList())));
+	}
+
+	private static <T> Predicate<T> distinctByKey(Function<? super T, ?> keyExtractor) {
+		Set<Object> seen = ConcurrentHashMap.newKeySet();
+		return t -> seen.add(keyExtractor.apply(t));
+	}
+
+	private static Map<String, Long> execTimes;
+
+	public static void initExecTimes() {
+		execTimes = new ConcurrentHashMap<>();
+	}
+
+	public static void mergeExecTimeFromStart(String tag, long startTimeMillis) {
+		mergeExecTime(tag, System.currentTimeMillis() - startTimeMillis);
+	}
+
+	public static void mergeExecTime(String tag, long execTimeMillis) {
+		execTimes.merge(tag, execTimeMillis, Long::sum);
+	}
+
+	public static void printExecTimes() {
+		System.out.println("Exec times:");
+		execTimes.forEach((tag, time) -> System.out.println(" " + tag + ": " + time + "ms"));
+	}
+
+	public static void printExecTimesWithTotal(long totalMillis) {
+		System.out.println("Exec times: total " + totalMillis + "ms");
+		execTimes.forEach((tag, time) -> System.out.println(" " + tag + ": " + time + "ms"
+				+ String.format(" (%.2f%%)", time * 100. / (double) totalMillis)));
 	}
 }

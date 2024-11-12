@@ -3,13 +3,15 @@ package jadx.gui.utils;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.jetbrains.annotations.Nullable;
+
 public class JumpManager {
 
-	private List<JumpPosition> list = new ArrayList<>();
+	private final List<JumpPosition> list = new ArrayList<>();
 	private int currentPos = 0;
 
 	public void addPosition(JumpPosition pos) {
-		if (pos.equals(getCurrent())) {
+		if (ignoreJump(pos)) {
 			return;
 		}
 		currentPos++;
@@ -25,13 +27,30 @@ public class JumpManager {
 		}
 	}
 
-	private JumpPosition getCurrent() {
+	public void updateCurPosition(JumpPosition pos) {
+		list.set(currentPos, pos);
+	}
+
+	public int size() {
+		return list.size();
+	}
+
+	private boolean ignoreJump(JumpPosition pos) {
+		JumpPosition current = getCurrent();
+		if (current == null) {
+			return false;
+		}
+		return pos.equals(current);
+	}
+
+	public @Nullable JumpPosition getCurrent() {
 		if (currentPos >= 0 && currentPos < list.size()) {
 			return list.get(currentPos);
 		}
 		return null;
 	}
 
+	@Nullable
 	public JumpPosition getPrev() {
 		if (currentPos == 0) {
 			return null;
@@ -40,6 +59,7 @@ public class JumpManager {
 		return list.get(currentPos);
 	}
 
+	@Nullable
 	public JumpPosition getNext() {
 		int size = list.size();
 		if (size == 0) {
@@ -57,5 +77,10 @@ public class JumpManager {
 		}
 		currentPos = newPos;
 		return position;
+	}
+
+	public void reset() {
+		list.clear();
+		currentPos = 0;
 	}
 }

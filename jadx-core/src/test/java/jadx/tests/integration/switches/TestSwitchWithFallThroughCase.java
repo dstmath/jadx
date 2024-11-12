@@ -1,13 +1,11 @@
 package jadx.tests.integration.switches;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class TestSwitchWithFallThroughCase extends IntegrationTest {
 
@@ -26,6 +24,7 @@ public class TestSwitchWithFallThroughCase extends IntegrationTest {
 						}
 						break;
 					}
+					// fallthrough
 				case 2:
 					if (b) {
 						str += "2";
@@ -42,20 +41,19 @@ public class TestSwitchWithFallThroughCase extends IntegrationTest {
 		}
 
 		public void check() {
-			assertEquals(">1;", test(5, true, true));
-			assertEquals(">2;", test(1, true, true));
-			assertEquals(";", test(3, true, true));
-			assertEquals("default;", test(0, true, true));
+			assertThat(test(5, true, true)).isEqualTo(">1;");
+			assertThat(test(1, true, true)).isEqualTo(">2;");
+			assertThat(test(3, true, true)).isEqualTo(";");
+			assertThat(test(0, true, true)).isEqualTo("default;");
 		}
 	}
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("switch (a % 4) {"));
-		assertThat(code, containsOne("if (a == 5 && b) {"));
-		assertThat(code, containsOne("if (b) {"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("switch (a % 4) {")
+				.containsOne("if (a == 5 && b) {")
+				.containsOne("if (b) {");
 	}
 }

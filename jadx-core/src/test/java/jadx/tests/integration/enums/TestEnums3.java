@@ -1,13 +1,11 @@
 package jadx.tests.integration.enums;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class TestEnums3 extends IntegrationTest {
 
@@ -20,7 +18,7 @@ public class TestEnums3 extends IntegrationTest {
 
 			private final int num;
 
-			private Numbers(int n) {
+			Numbers(int n) {
 				this.num = n;
 			}
 
@@ -30,20 +28,19 @@ public class TestEnums3 extends IntegrationTest {
 		}
 
 		public void check() {
-			assertTrue(Numbers.ONE.getNum() == 1);
-			assertTrue(Numbers.THREE.getNum() == 3);
-			assertTrue(Numbers.FOUR.getNum() == 4);
+			assertThat(Numbers.ONE.getNum()).isEqualTo(1);
+			assertThat(Numbers.THREE.getNum()).isEqualTo(3);
+			assertThat(Numbers.FOUR.getNum()).isEqualTo(4);
 		}
 	}
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("ONE(1)"));
-//		assertThat(code, containsOne("THREE(three)"));
-//		assertThat(code, containsOne("assertTrue(Numbers.ONE.getNum() == 1);"));
-		assertThat(code, containsOne("private Numbers(int n) {"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("ONE(1)")
+				.containsOne("Numbers(int n) {");
+		// assertThat(code, containsOne("THREE(three)"));
+		// assertThat(code, containsOne("assertTrue(Numbers.ONE.getNum() == 1);"));
 	}
 }

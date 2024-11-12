@@ -1,13 +1,11 @@
 package jadx.tests.integration.invoke;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
 
-import static jadx.tests.api.utils.JadxMatchers.countString;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class TestSuperInvoke extends IntegrationTest {
 
@@ -29,15 +27,14 @@ public class TestSuperInvoke extends IntegrationTest {
 	}
 
 	public void check() {
-		assertEquals(3, new B().test());
+		assertThat(new B().test()).isEqualTo(3);
 	}
 
 	@Test
 	public void test() {
 		noDebugInfo();
-		ClassNode cls = getClassNode(TestSuperInvoke.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, countString(2, "return super.a() + 2;"));
+		assertThat(getClassNode(TestSuperInvoke.class))
+				.code()
+				.countString(2, "return super.a() + 2;");
 	}
 }

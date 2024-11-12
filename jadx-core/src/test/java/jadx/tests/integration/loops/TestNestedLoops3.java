@@ -1,13 +1,11 @@
 package jadx.tests.integration.loops;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class TestNestedLoops3 extends IntegrationTest {
 
@@ -16,8 +14,7 @@ public class TestNestedLoops3 extends IntegrationTest {
 
 		public int test(int b) {
 			int i;
-			loop0:
-			while (true) {
+			loop0: while (true) {
 				f1();
 				i = 0;
 				while (true) {
@@ -33,7 +30,7 @@ public class TestNestedLoops3 extends IntegrationTest {
 						exc();
 						break;
 					} catch (Exception e) {
-						//
+						// ignore
 					}
 				}
 			}
@@ -56,15 +53,14 @@ public class TestNestedLoops3 extends IntegrationTest {
 
 		public void check() {
 			test(1);
-			assertEquals(302, c);
+			assertThat(c).isEqualTo(302);
 		}
 	}
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("} catch (Exception e) {"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("} catch (Exception e) {");
 	}
 }

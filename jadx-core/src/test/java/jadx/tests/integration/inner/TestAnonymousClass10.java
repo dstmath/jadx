@@ -2,15 +2,10 @@ package jadx.tests.integration.inner;
 
 import java.util.Random;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.not;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestAnonymousClass10 extends IntegrationTest {
 
@@ -19,8 +14,7 @@ public class TestAnonymousClass10 extends IntegrationTest {
 		public A test() {
 			Random random = new Random();
 			int a2 = random.nextInt();
-			int a3 = a2 + 3;
-			return new A(this, a2, a3, 4, 5, random.nextDouble()) {
+			return new A(this, a2, a2 + 3, 4, 5, random.nextDouble()) {
 				@Override
 				public void m() {
 					System.out.println(1);
@@ -38,10 +32,9 @@ public class TestAnonymousClass10 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("return new A(this, a2, a2 + 3, 4, 5, random.nextDouble()) {"));
-		assertThat(code, not(containsString("synthetic")));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("return new A(this, a2, a2 + 3, 4, 5, random.nextDouble()) {")
+				.doesNotContain("synthetic");
 	}
 }

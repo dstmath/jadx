@@ -1,12 +1,10 @@
 package jadx.tests.integration.arrays;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
 
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestArrayFillConstReplace extends IntegrationTest {
 
@@ -14,15 +12,15 @@ public class TestArrayFillConstReplace extends IntegrationTest {
 		public static final int CONST_INT = 0xffff;
 
 		public int[] test() {
-			return new int[]{127, 129, CONST_INT};
+			return new int[] { 127, 129, CONST_INT };
 		}
 	}
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("return new int[]{127, 129, CONST_INT};"));
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne(" int CONST_INT = 65535;")
+				.containsOne("return new int[]{127, 129, CONST_INT};");
 	}
 }

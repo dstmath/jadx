@@ -1,13 +1,9 @@
 package jadx.tests.integration.trycatch;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.hamcrest.CoreMatchers.not;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestFinally extends IntegrationTest {
 
@@ -17,7 +13,7 @@ public class TestFinally extends IntegrationTest {
 		String test(Context context, Object uri) {
 			Cursor cursor = null;
 			try {
-				String[] projection = {DISPLAY_NAME};
+				String[] projection = { DISPLAY_NAME };
 				cursor = context.query(uri, projection);
 				int columnIndex = cursor.getColumnIndexOrThrow(DISPLAY_NAME);
 				cursor.moveToFirst();
@@ -54,10 +50,10 @@ public class TestFinally extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("cursor.getString(columnIndex);"));
-		assertThat(code, not(containsOne("String str = true;")));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("} finally {")
+				.containsOne("cursor.getString(columnIndex);")
+				.doesNotContain("String str = true;");
 	}
 }

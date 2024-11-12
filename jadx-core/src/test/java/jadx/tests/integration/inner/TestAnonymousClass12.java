@@ -1,12 +1,9 @@
 package jadx.tests.integration.inner;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestAnonymousClass12 extends IntegrationTest {
 
@@ -16,8 +13,8 @@ public class TestAnonymousClass12 extends IntegrationTest {
 			public abstract void doSomething();
 		}
 
-		private BasicAbstract outer;
-		private BasicAbstract inner;
+		public BasicAbstract outer;
+		public BasicAbstract inner;
 
 		public void test() {
 			outer = new BasicAbstract() {
@@ -36,11 +33,10 @@ public class TestAnonymousClass12 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("outer = new BasicAbstract() {"));
-		assertThat(code, containsOne("inner = new BasicAbstract() {"));
-		assertThat(code, containsOne("inner = null;"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("outer = new BasicAbstract() {")
+				.containsOne("inner = new BasicAbstract() {")
+				.containsOne("inner = null;");
 	}
 }

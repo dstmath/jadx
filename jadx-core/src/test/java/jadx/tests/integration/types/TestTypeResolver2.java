@@ -2,19 +2,16 @@ package jadx.tests.integration.types;
 
 import java.io.IOException;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestTypeResolver2 extends IntegrationTest {
 
 	public static class TestCls {
 
-		private static boolean test(Object obj) throws IOException {
+		public static boolean test(Object obj) throws IOException {
 			if (obj != null) {
 				return true;
 			}
@@ -26,9 +23,8 @@ public class TestTypeResolver2 extends IntegrationTest {
 	public void test() {
 		noDebugInfo();
 
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("if (obj != null) {"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("if (obj != null) {");
 	}
 }

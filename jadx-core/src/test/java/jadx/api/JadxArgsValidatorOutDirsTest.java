@@ -1,19 +1,23 @@
 package jadx.api;
 
-import org.junit.Test;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import jadx.core.utils.files.FileUtils;
-
 import static jadx.core.utils.files.FileUtils.toFile;
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class JadxArgsValidatorOutDirsTest {
-
 	private static final Logger LOG = LoggerFactory.getLogger(JadxArgsValidatorOutDirsTest.class);
+
 	public JadxArgs args;
+
+	@TempDir
+	Path testDir;
 
 	@Test
 	public void checkAllSet() {
@@ -44,8 +48,8 @@ public class JadxArgsValidatorOutDirsTest {
 		setOutDirs(null, null, null);
 		String inputFileBase = args.getInputFiles().get(0).getName().replace(".apk", "");
 		checkOutDirs(inputFileBase,
-				inputFileBase + "/" + JadxArgs.DEFAULT_SRC_DIR,
-				inputFileBase + "/" + JadxArgs.DEFAULT_RES_DIR);
+				inputFileBase + '/' + JadxArgs.DEFAULT_SRC_DIR,
+				inputFileBase + '/' + JadxArgs.DEFAULT_RES_DIR);
 	}
 
 	private void setOutDirs(String outDir, String srcDir, String resDir) {
@@ -57,16 +61,20 @@ public class JadxArgsValidatorOutDirsTest {
 	}
 
 	private void checkOutDirs(String outDir, String srcDir, String resDir) {
-		JadxArgsValidator.validate(args);
+		JadxArgsValidator.validate(new JadxDecompiler(args));
 		LOG.debug("Got dirs: out={}, src={}, res={}", args.getOutDir(), args.getOutDirSrc(), args.getOutDirRes());
-		assertThat(args.getOutDir(), is(toFile(outDir)));
-		assertThat(args.getOutDirSrc(), is(toFile(srcDir)));
-		assertThat(args.getOutDirRes(), is(toFile(resDir)));
+		assertThat(args.getOutDir()).isEqualTo(toFile(outDir));
+		assertThat(args.getOutDirSrc()).isEqualTo(toFile(srcDir));
+		assertThat(args.getOutDirRes()).isEqualTo(toFile(resDir));
 	}
 
 	private JadxArgs makeArgs() {
-		JadxArgs args = new JadxArgs();
-		args.getInputFiles().add(FileUtils.createTempFile("some.apk"));
-		return args;
+		try {
+			JadxArgs args = new JadxArgs();
+			args.getInputFiles().add(Files.createTempFile(testDir, "test-", ".apk").toFile());
+			return args;
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		}
 	}
 }

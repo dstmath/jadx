@@ -2,84 +2,101 @@ package jadx.core.export;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
-import java.util.Set;
+import java.util.regex.Pattern;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import jadx.core.dex.attributes.AFlag;
-import jadx.core.dex.nodes.ClassNode;
-import jadx.core.dex.nodes.DexNode;
+import jadx.api.ResourceFile;
 import jadx.core.dex.nodes.RootNode;
+import jadx.core.utils.android.AndroidManifestParser;
+import jadx.core.utils.android.AppAttribute;
+import jadx.core.utils.android.ApplicationParams;
 import jadx.core.utils.exceptions.JadxRuntimeException;
-import jadx.core.utils.files.FileUtils;
+import jadx.core.xmlgen.ResContainer;
 
 public class ExportGradleProject {
-
-	private static final Logger LOG = LoggerFactory.getLogger(ExportGradleProject.class);
-
-	private static final Set<String> IGNORE_CLS_NAMES = new HashSet<>(Arrays.asList(
-			"R",
-			"BuildConfig"
-	));
+	private static final Pattern ILLEGAL_GRADLE_CHARS = Pattern.compile("[/\\\\:>\"?*|]");
 
 	private final RootNode root;
-	private final File outDir;
-	private File srcOutDir;
-	private File resOutDir;
+	private final File projectDir;
+	private final File appDir;
+	private final ApplicationParams applicationParams;
 
-	public ExportGradleProject(RootNode root, File outDir) {
+	public ExportGradleProject(RootNode root, File projectDir, ResourceFile androidManifest, ResContainer appStrings) {
 		this.root = root;
-		this.outDir = outDir;
-		this.srcOutDir = new File(outDir, "src/main/java");
-		this.resOutDir = new File(outDir, "src/main");
+		this.projectDir = projectDir;
+		this.appDir = new File(projectDir, "app");
+		this.applicationParams = getApplicationParams(androidManifest, appStrings);
 	}
 
-	public void init() {
+	public void generateGradleFiles() {
 		try {
-			FileUtils.makeDirs(srcOutDir);
-			FileUtils.makeDirs(resOutDir);
-			saveBuildGradle();
-			skipGeneratedClasses();
+			saveProjectBuildGradle();
+			saveApplicationBuildGradle();
+			saveSettingsGradle();
 		} catch (Exception e) {
 			throw new JadxRuntimeException("Gradle export failed", e);
 		}
 	}
 
-	private void saveBuildGradle() throws IOException {
+	private void saveProjectBuildGradle() throws IOException {
 		TemplateFile tmpl = TemplateFile.fromResources("/export/build.gradle.tmpl");
+		tmpl.save(new File(projectDir, "build.gradle"));
+	}
+
+	private void saveSettingsGradle() throws IOException {
+		TemplateFile tmpl = TemplateFile.fromResources("/export/settings.gradle.tmpl");
+
+		tmpl.add("applicationName", ILLEGAL_GRADLE_CHARS.matcher(applicationParams.getApplicationName()).replaceAll(""));
+		tmpl.save(new File(projectDir, "settings.gradle"));
+	}
+
+	private void saveApplicationBuildGradle() throws IOException {
+		TemplateFile tmpl = TemplateFile.fromResources("/export/app.build.gradle.tmpl");
 		String appPackage = root.getAppPackage();
+
 		if (appPackage == null) {
 			appPackage = "UNKNOWN";
 		}
+
+		Integer minSdkVersion = applicationParams.getMinSdkVersion();
+
 		tmpl.add("applicationId", appPackage);
-		// TODO: load from AndroidManifest.xml
-		tmpl.add("minSdkVersion", 9);
-		tmpl.add("targetSdkVersion", 21);
-		tmpl.save(new File(outDir, "build.gradle"));
-	}
+		tmpl.add("minSdkVersion", minSdkVersion);
+		tmpl.add("targetSdkVersion", applicationParams.getTargetSdkVersion());
+		tmpl.add("versionCode", applicationParams.getVersionCode());
+		tmpl.add("versionName", applicationParams.getVersionName());
 
-	private void skipGeneratedClasses() {
-		for (DexNode dexNode : root.getDexNodes()) {
-			List<ClassNode> classes = dexNode.getClasses();
-			for (ClassNode cls : classes) {
-				String shortName = cls.getClassInfo().getShortName();
-				if (IGNORE_CLS_NAMES.contains(shortName)) {
-					cls.add(AFlag.DONT_GENERATE);
-					LOG.debug("Skip class: {}", cls);
-				}
-			}
+		List<String> additionalOptions = new ArrayList<>();
+		GradleInfoStorage gradleInfo = root.getGradleInfoStorage();
+		if (gradleInfo.isVectorPathData() && minSdkVersion < 21 || gradleInfo.isVectorFillType() && minSdkVersion < 24) {
+			additionalOptions.add("vectorDrawables.useSupportLibrary = true");
 		}
+		if (gradleInfo.isUseApacheHttpLegacy()) {
+			additionalOptions.add("useLibrary 'org.apache.http.legacy'");
+		}
+		genAdditionalAndroidPluginOptions(tmpl, additionalOptions);
+
+		tmpl.save(new File(appDir, "build.gradle"));
 	}
 
-	public File getSrcOutDir() {
-		return srcOutDir;
+	private void genAdditionalAndroidPluginOptions(TemplateFile tmpl, List<String> additionalOptions) {
+		StringBuilder sb = new StringBuilder();
+		for (String additionalOption : additionalOptions) {
+			sb.append("        ").append(additionalOption).append('\n');
+		}
+		tmpl.add("additionalOptions", sb.toString());
 	}
 
-	public File getResOutDir() {
-		return resOutDir;
+	private ApplicationParams getApplicationParams(ResourceFile androidManifest, ResContainer appStrings) {
+		AndroidManifestParser parser = new AndroidManifestParser(androidManifest, appStrings, EnumSet.of(
+				AppAttribute.APPLICATION_LABEL,
+				AppAttribute.MIN_SDK_VERSION,
+				AppAttribute.TARGET_SDK_VERSION,
+				AppAttribute.VERSION_CODE,
+				AppAttribute.VERSION_NAME),
+				root.getArgs().getSecurity());
+		return parser.parse();
 	}
 }

@@ -1,55 +1,40 @@
 package jadx.gui.utils;
 
-import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.jetbrains.annotations.Nullable;
 
-import jadx.gui.jobs.DecompileJob;
-import jadx.gui.jobs.IndexJob;
-import jadx.gui.ui.SearchDialog;
-import jadx.gui.utils.search.TextSearchIndex;
+import jadx.api.JavaClass;
+import jadx.gui.ui.dialog.SearchDialog;
+import jadx.gui.utils.pkgs.PackageHelper;
 
 public class CacheObject {
 
-	private DecompileJob decompileJob;
-	private IndexJob indexJob;
-
-	private TextSearchIndex textIndex;
-	private CodeUsageInfo usageInfo;
 	private String lastSearch;
 	private JNodeCache jNodeCache;
-	private Set<SearchDialog.SearchOptions> lastSearchOptions;
+	private Map<SearchDialog.SearchPreset, Set<SearchDialog.SearchOptions>> lastSearchOptions;
+	private String lastSearchPackage;
+
+	private List<List<JavaClass>> decompileBatches;
+	private PackageHelper packageHelper;
+
+	private volatile boolean fullDecompilationFinished;
 
 	public CacheObject() {
 		reset();
 	}
 
 	public void reset() {
-		decompileJob = null;
-		indexJob = null;
-		textIndex = null;
 		lastSearch = null;
 		jNodeCache = new JNodeCache();
-		usageInfo = null;
-		lastSearchOptions = EnumSet.noneOf(SearchDialog.SearchOptions.class);
-	}
-
-	public DecompileJob getDecompileJob() {
-		return decompileJob;
-	}
-
-	public void setDecompileJob(DecompileJob decompileJob) {
-		this.decompileJob = decompileJob;
-	}
-
-	@Nullable
-	public TextSearchIndex getTextIndex() {
-		return textIndex;
-	}
-
-	public void setTextIndex(TextSearchIndex textIndex) {
-		this.textIndex = textIndex;
+		lastSearchOptions = new HashMap<>();
+		lastSearchPackage = null;
+		decompileBatches = null;
+		packageHelper = null;
+		fullDecompilationFinished = false;
 	}
 
 	@Nullable
@@ -57,36 +42,48 @@ public class CacheObject {
 		return lastSearch;
 	}
 
+	@Nullable
+	public String getLastSearchPackage() {
+		return lastSearchPackage;
+	}
+
 	public void setLastSearch(String lastSearch) {
 		this.lastSearch = lastSearch;
 	}
 
-	@Nullable
-	public CodeUsageInfo getUsageInfo() {
-		return usageInfo;
-	}
-
-	public void setUsageInfo(@Nullable CodeUsageInfo usageInfo) {
-		this.usageInfo = usageInfo;
-	}
-
-	public IndexJob getIndexJob() {
-		return indexJob;
-	}
-
-	public void setIndexJob(IndexJob indexJob) {
-		this.indexJob = indexJob;
+	public void setLastSearchPackage(String lastSearchPackage) {
+		this.lastSearchPackage = lastSearchPackage;
 	}
 
 	public JNodeCache getNodeCache() {
 		return jNodeCache;
 	}
 
-	public void setLastSearchOptions(Set<SearchDialog.SearchOptions> lastSearchOptions) {
-		this.lastSearchOptions = lastSearchOptions;
+	public Map<SearchDialog.SearchPreset, Set<SearchDialog.SearchOptions>> getLastSearchOptions() {
+		return lastSearchOptions;
 	}
 
-	public Set<SearchDialog.SearchOptions> getLastSearchOptions() {
-		return lastSearchOptions;
+	public @Nullable List<List<JavaClass>> getDecompileBatches() {
+		return decompileBatches;
+	}
+
+	public void setDecompileBatches(List<List<JavaClass>> decompileBatches) {
+		this.decompileBatches = decompileBatches;
+	}
+
+	public PackageHelper getPackageHelper() {
+		return packageHelper;
+	}
+
+	public void setPackageHelper(PackageHelper packageHelper) {
+		this.packageHelper = packageHelper;
+	}
+
+	public boolean isFullDecompilationFinished() {
+		return fullDecompilationFinished;
+	}
+
+	public void setFullDecompilationFinished(boolean fullDecompilationFinished) {
+		this.fullDecompilationFinished = fullDecompilationFinished;
 	}
 }

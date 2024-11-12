@@ -1,32 +1,38 @@
 package jadx.tests.integration.arrays;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
 
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.hamcrest.CoreMatchers.instanceOf;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestArrays3 extends IntegrationTest {
 	public static class TestCls {
 
 		private Object test(byte[] bArr) {
-			return new Object[]{bArr};
+			return new Object[] { bArr };
 		}
 
 		public void check() {
-			assertThat(test(new byte[]{1, 2}), instanceOf(Object[].class));
+			byte[] inputArr = { 1, 2 };
+			Object result = test(inputArr);
+			assertThat(result).isInstanceOf(Object[].class);
+			assertThat(((Object[]) result)[0]).isEqualTo(inputArr);
 		}
 	}
 
 	@Test
 	public void test() {
-		noDebugInfo();
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("return new Object[]{bArr};");
+	}
 
-		assertThat(code, containsOne("return new Object[]{bArr};"));
+	@Test
+	public void testNoDebug() {
+		noDebugInfo();
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("return new Object[]{bArr};");
 	}
 }

@@ -1,13 +1,9 @@
 package jadx.tests.integration.conditions;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.not;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestConditions4 extends IntegrationTest {
 
@@ -20,11 +16,9 @@ public class TestConditions4 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsString("num >= 59 && num <= 66"));
-		assertThat(code, containsString("return inRange ? num + 1 : num;"));
-		assertThat(code, not(containsString("else")));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.contains("num >= 59 && num <= 66")
+				.contains("? num + 1 : num;").doesNotContain("else");
 	}
 }

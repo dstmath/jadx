@@ -1,12 +1,8 @@
 package jadx.tests.integration.inner;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import jadx.tests.api.IntegrationTest;
-import jadx.tests.api.SmaliTest;
-
-import static org.hamcrest.Matchers.not;
-import static org.junit.Assert.assertThat;
 
 public class TestInnerClassSyntheticConstructor extends IntegrationTest {
 

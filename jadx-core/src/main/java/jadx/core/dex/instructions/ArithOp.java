@@ -25,4 +25,14 @@ public enum ArithOp {
 		return this.symbol;
 	}
 
+	public boolean isBitOp() {
+		switch (this) {
+			case AND:
+			case OR:
+			case XOR:
+				return true;
+			default:
+				return false;
+		}
+	}
 }

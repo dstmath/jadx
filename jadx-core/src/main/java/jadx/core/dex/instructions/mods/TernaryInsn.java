@@ -1,29 +1,24 @@
 package jadx.core.dex.instructions.mods;
 
 import java.util.Collection;
+import java.util.function.Consumer;
 
 import jadx.core.dex.instructions.InsnType;
 import jadx.core.dex.instructions.args.InsnArg;
-import jadx.core.dex.instructions.args.LiteralArg;
 import jadx.core.dex.instructions.args.RegisterArg;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.regions.conditions.IfCondition;
 import jadx.core.utils.InsnUtils;
-import jadx.core.utils.Utils;
 
 public final class TernaryInsn extends InsnNode {
 
 	private IfCondition condition;
 
-	public TernaryInsn(IfCondition condition, RegisterArg result) {
-		this(condition, result, LiteralArg.TRUE, LiteralArg.FALSE);
-	}
-
 	public TernaryInsn(IfCondition condition, RegisterArg result, InsnArg th, InsnArg els) {
-		super(InsnType.TERNARY, 2);
+		this();
 		setResult(result);
 
-		if (th.equals(LiteralArg.FALSE) && els.equals(LiteralArg.TRUE)) {
+		if (th.isFalse() && els.isTrue()) {
 			// inverted
 			this.condition = IfCondition.invert(condition);
 			addArg(els);
@@ -33,6 +28,11 @@ public final class TernaryInsn extends InsnNode {
 			addArg(th);
 			addArg(els);
 		}
+		visitInsns(this::inheritMetadata);
+	}
+
+	private TernaryInsn() {
+		super(InsnType.TERNARY, 2);
 	}
 
 	public IfCondition getCondition() {
@@ -59,6 +59,11 @@ public final class TernaryInsn extends InsnNode {
 		list.addAll(condition.getRegisterArgs());
 	}
 
+	public void visitInsns(Consumer<InsnNode> visitor) {
+		super.visitInsns(visitor);
+		condition.visitInsns(visitor);
+	}
+
 	@Override
 	public boolean isSame(InsnNode obj) {
 		if (this == obj) {
@@ -72,9 +77,26 @@ public final class TernaryInsn extends InsnNode {
 	}
 
 	@Override
+	public InsnNode copy() {
+		TernaryInsn copy = new TernaryInsn();
+		copy.condition = condition;
+		return copyCommonParams(copy);
+	}
+
+	@Override
+	public void rebindArgs() {
+		super.rebindArgs();
+		for (RegisterArg reg : condition.getRegisterArgs()) {
+			InsnNode parentInsn = reg.getParentInsn();
+			if (parentInsn != null) {
+				parentInsn.rebindArgs();
+			}
+		}
+	}
+
+	@Override
 	public String toString() {
-		return InsnUtils.formatOffset(offset) + ": TERNARY"
-				+ getResult() + " = "
-				+ Utils.listToString(getArguments());
+		return InsnUtils.formatOffset(offset) + ": TERNARY "
+				+ getResult() + " = (" + condition + ") ? " + getArg(0) + " : " + getArg(1);
 	}
 }

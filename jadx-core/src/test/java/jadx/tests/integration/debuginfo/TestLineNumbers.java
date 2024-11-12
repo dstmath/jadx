@@ -1,17 +1,15 @@
 package jadx.tests.integration.debuginfo;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.codegen.CodeWriter;
+import jadx.api.utils.CodeUtils;
 import jadx.core.dex.attributes.nodes.LineAttrNode;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.FieldNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.tests.api.IntegrationTest;
 
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestLineNumbers extends IntegrationTest {
 
@@ -42,38 +40,37 @@ public class TestLineNumbers extends IntegrationTest {
 
 	@Test
 	public void test() {
+		printLineNumbers();
 		ClassNode cls = getClassNode(TestCls.class);
 		String code = cls.getCode().toString();
 
 		FieldNode field = cls.searchFieldByName("field");
-		MethodNode func = cls.searchMethodByName("func()V");
+		MethodNode func = cls.searchMethodByShortId("func()V");
 		ClassNode inner = cls.getInnerClasses().get(0);
-		MethodNode innerFunc = inner.searchMethodByName("innerFunc()V");
-		MethodNode innerFunc2 = inner.searchMethodByName("innerFunc2()V");
-		MethodNode innerFunc3 = inner.searchMethodByName("innerFunc3()V");
+		MethodNode innerFunc = inner.searchMethodByShortId("innerFunc()V");
+		MethodNode innerFunc2 = inner.searchMethodByShortId("innerFunc2()V");
+		MethodNode innerFunc3 = inner.searchMethodByShortId("innerFunc3()V");
 		FieldNode innerField = inner.searchFieldByName("innerField");
 
 		// check source lines (available only for instructions and methods)
-		int testClassLine = 18;
-		assertEquals(testClassLine + 3, func.getSourceLine());
-		assertEquals(testClassLine + 9, innerFunc.getSourceLine());
-		assertEquals(testClassLine + 12, innerFunc2.getSourceLine());
-		assertEquals(testClassLine + 20, innerFunc3.getSourceLine());
+		int testClassLine = 16;
+		assertThat(testClassLine + 3).isEqualTo(func.getSourceLine());
+		assertThat(testClassLine + 9).isEqualTo(innerFunc.getSourceLine());
+		assertThat(testClassLine + 12).isEqualTo(innerFunc2.getSourceLine());
+		assertThat(testClassLine + 20).isEqualTo(innerFunc3.getSourceLine());
 
 		// check decompiled lines
-		String[] lines = code.split(CodeWriter.NL);
-		checkLine(lines, field, "int field;");
-		checkLine(lines, func, "public void func() {");
-		checkLine(lines, inner, "public static class Inner {");
-		checkLine(lines, innerField, "int innerField;");
-		checkLine(lines, innerFunc, "public void innerFunc() {");
-		checkLine(lines, innerFunc2, "public void innerFunc2() {");
-		checkLine(lines, innerFunc3, "public void innerFunc3() {");
+		checkLine(code, field, "int field;");
+		checkLine(code, func, "public void func() {");
+		checkLine(code, inner, "public static class Inner {");
+		checkLine(code, innerField, "int innerField;");
+		checkLine(code, innerFunc, "public void innerFunc() {");
+		checkLine(code, innerFunc2, "public void innerFunc2() {");
+		checkLine(code, innerFunc3, "public void innerFunc3() {");
 	}
 
-	private static void checkLine(String[] lines, LineAttrNode node, String str) {
-		int lineNumber = node.getDecompiledLine();
-		String line = lines[lineNumber - 1];
-		assertThat(line, containsString(str));
+	private static void checkLine(String code, LineAttrNode node, String str) {
+		String line = CodeUtils.getLineForPos(code, node.getDefPosition());
+		assertThat(line).contains(str);
 	}
 }

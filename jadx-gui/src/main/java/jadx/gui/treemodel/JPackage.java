@@ -1,49 +1,71 @@
 package jadx.gui.treemodel;
 
-import javax.swing.*;
-import java.util.ArrayList;
 import java.util.List;
 
-import org.jetbrains.annotations.NotNull;
+import javax.swing.Icon;
+import javax.swing.JPopupMenu;
 
-import jadx.api.JavaClass;
+import jadx.api.JavaNode;
 import jadx.api.JavaPackage;
-import jadx.gui.utils.Utils;
+import jadx.gui.ui.MainWindow;
+import jadx.gui.ui.popupmenu.JPackagePopupMenu;
+import jadx.gui.utils.Icons;
 
-public class JPackage extends JNode implements Comparable<JPackage> {
+import static jadx.gui.utils.UiUtils.escapeHtml;
+import static jadx.gui.utils.UiUtils.fadeHtml;
+import static jadx.gui.utils.UiUtils.wrapHtml;
+
+public class JPackage extends JNode {
 	private static final long serialVersionUID = -4120718634156839804L;
 
-	private static final ImageIcon PACKAGE_ICON = Utils.openIcon("package_obj");
+	public static final String PACKAGE_DEFAULT_HTML_STR = wrapHtml(fadeHtml(escapeHtml("<empty>")));
+
+	private final JavaPackage pkg;
+	private final boolean enabled;
+	private final List<JClass> classes;
+	private final List<JPackage> subPackages;
+
+	/**
+	 * Package created by full package alias, don't have a raw package reference.
+	 * `pkg` field point to the closest raw package leaf.
+	 */
+	private final boolean synthetic;
 
 	private String name;
-	private final List<JClass> classes;
-	private final List<JPackage> innerPackages = new ArrayList<>(1);
 
-	public JPackage(JavaPackage pkg) {
-		this.name = pkg.getName();
-		List<JavaClass> javaClasses = pkg.getClasses();
-		this.classes = new ArrayList<>(javaClasses.size());
-		for (JavaClass javaClass : javaClasses) {
-			classes.add(new JClass(javaClass));
-		}
-		update();
+	public JPackage(JavaPackage pkg, boolean enabled, List<JClass> classes, List<JPackage> subPackages, boolean synthetic) {
+		this.pkg = pkg;
+		this.enabled = enabled;
+		this.classes = classes;
+		this.subPackages = subPackages;
+		this.synthetic = synthetic;
 	}
 
-	public JPackage(String name) {
-		this.name = name;
-		this.classes = new ArrayList<>(1);
-	}
-
-	public final void update() {
+	public void update() {
 		removeAllChildren();
-		for (JPackage pkg : innerPackages) {
-			pkg.update();
-			add(pkg);
+		if (isEnabled()) {
+			for (JPackage pkg : subPackages) {
+				pkg.update();
+				add(pkg);
+			}
+			for (JClass cls : classes) {
+				cls.update();
+				add(cls);
+			}
 		}
-		for (JClass cls : classes) {
-			cls.update();
-			add(cls);
-		}
+	}
+
+	@Override
+	public JPopupMenu onTreePopupMenu(MainWindow mainWindow) {
+		return new JPackagePopupMenu(mainWindow, this);
+	}
+
+	public JavaPackage getPkg() {
+		return pkg;
+	}
+
+	public JavaNode getJavaNode() {
+		return pkg;
 	}
 
 	@Override
@@ -55,32 +77,30 @@ public class JPackage extends JNode implements Comparable<JPackage> {
 		this.name = name;
 	}
 
-	public List<JPackage> getInnerPackages() {
-		return innerPackages;
+	public List<JPackage> getSubPackages() {
+		return subPackages;
 	}
 
 	public List<JClass> getClasses() {
 		return classes;
 	}
 
+	public boolean isEnabled() {
+		return enabled;
+	}
+
+	public boolean isSynthetic() {
+		return synthetic;
+	}
+
 	@Override
 	public Icon getIcon() {
-		return PACKAGE_ICON;
+		return Icons.PACKAGE;
 	}
 
 	@Override
 	public JClass getJParent() {
 		return null;
-	}
-
-	@Override
-	public int getLine() {
-		return 0;
-	}
-
-	@Override
-	public int compareTo(@NotNull JPackage o) {
-		return name.compareTo(o.name);
 	}
 
 	@Override
@@ -91,12 +111,12 @@ public class JPackage extends JNode implements Comparable<JPackage> {
 		if (o == null || getClass() != o.getClass()) {
 			return false;
 		}
-		return name.equals(((JPackage) o).name);
+		return pkg.equals(((JPackage) o).pkg);
 	}
 
 	@Override
 	public int hashCode() {
-		return name.hashCode();
+		return pkg.hashCode();
 	}
 
 	@Override
@@ -105,7 +125,29 @@ public class JPackage extends JNode implements Comparable<JPackage> {
 	}
 
 	@Override
+	public String makeStringHtml() {
+		if (name.isEmpty()) {
+			return PACKAGE_DEFAULT_HTML_STR;
+		}
+		return name;
+	}
+
+	@Override
+	public boolean disableHtml() {
+		if (name.isEmpty()) {
+			// show PACKAGE_DEFAULT_HTML_STR for empty package
+			return false;
+		}
+		return true;
+	}
+
+	@Override
 	public String makeLongString() {
+		return pkg.getFullName();
+	}
+
+	@Override
+	public String toString() {
 		return name;
 	}
 }

@@ -1,43 +1,104 @@
 package jadx.core.dex.trycatch;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
+
+import org.jetbrains.annotations.Nullable;
 
 import jadx.core.Consts;
+import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.info.ClassInfo;
+import jadx.core.dex.instructions.args.ArgType;
 import jadx.core.dex.instructions.args.InsnArg;
 import jadx.core.dex.nodes.BlockNode;
 import jadx.core.dex.nodes.IContainer;
+import jadx.core.dex.nodes.MethodNode;
 import jadx.core.utils.InsnUtils;
+import jadx.core.utils.Utils;
 
 public class ExceptionHandler {
 
-	private final ClassInfo catchType;
-	private final int handleOffset;
+	private final List<ClassInfo> catchTypes = new ArrayList<>(1);
+	private final int handlerOffset;
 
 	private BlockNode handlerBlock;
 	private final List<BlockNode> blocks = new ArrayList<>();
 	private IContainer handlerRegion;
 	private InsnArg arg;
 
-	private TryCatchBlock tryBlock;
+	private TryCatchBlockAttr tryBlock;
 	private boolean isFinally;
 
-	public ExceptionHandler(int addr, ClassInfo type) {
-		this.handleOffset = addr;
-		this.catchType = type;
+	private boolean removed = false;
+
+	public static ExceptionHandler build(MethodNode mth, int addr, @Nullable ClassInfo type) {
+		ExceptionHandler eh = new ExceptionHandler(addr);
+		eh.addCatchType(mth, type);
+		return eh;
 	}
 
-	public ClassInfo getCatchType() {
-		return catchType;
+	private ExceptionHandler(int addr) {
+		this.handlerOffset = addr;
+	}
+
+	/**
+	 * Add exception type to catch block
+	 *
+	 * @param type - null for 'all' or 'Throwable' handler
+	 */
+	public boolean addCatchType(MethodNode mth, @Nullable ClassInfo type) {
+		if (type != null) {
+			if (catchTypes.contains(type)) {
+				return false;
+			}
+			return catchTypes.add(type);
+		}
+		if (!this.catchTypes.isEmpty()) {
+			mth.addDebugComment("Throwable added to exception handler: '" + catchTypeStr() + "', keep only Throwable");
+			catchTypes.clear();
+			return true;
+		}
+		return false;
+	}
+
+	public void addCatchTypes(MethodNode mth, Collection<ClassInfo> types) {
+		for (ClassInfo type : types) {
+			addCatchType(mth, type);
+		}
+	}
+
+	public List<ClassInfo> getCatchTypes() {
+		return catchTypes;
+	}
+
+	public ArgType getArgType() {
+		if (isCatchAll()) {
+			return ArgType.THROWABLE;
+		}
+		List<ClassInfo> types = getCatchTypes();
+		if (types.size() == 1) {
+			return types.iterator().next().getType();
+		} else {
+			return ArgType.THROWABLE;
+		}
 	}
 
 	public boolean isCatchAll() {
-		return catchType == null || catchType.getFullName().equals(Consts.CLASS_THROWABLE);
+		if (catchTypes.isEmpty()) {
+			return true;
+		}
+		for (ClassInfo classInfo : catchTypes) {
+			if (classInfo.getFullName().equals(Consts.CLASS_THROWABLE)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
-	public int getHandleOffset() {
-		return handleOffset;
+	public int getHandlerOffset() {
+		return handlerOffset;
 	}
 
 	public BlockNode getHandlerBlock() {
@@ -72,11 +133,11 @@ public class ExceptionHandler {
 		this.arg = arg;
 	}
 
-	public void setTryBlock(TryCatchBlock tryBlock) {
+	public void setTryBlock(TryCatchBlockAttr tryBlock) {
 		this.tryBlock = tryBlock;
 	}
 
-	public TryCatchBlock getTryBlock() {
+	public TryCatchBlockAttr getTryBlock() {
 		return tryBlock;
 	}
 
@@ -88,36 +149,40 @@ public class ExceptionHandler {
 		this.isFinally = isFinally;
 	}
 
-	@Override
-	public int hashCode() {
-		return (catchType == null ? 0 : 31 * catchType.hashCode()) + handleOffset;
+	public boolean isRemoved() {
+		return removed;
+	}
+
+	public void markForRemove() {
+		this.removed = true;
+		this.blocks.forEach(b -> b.add(AFlag.REMOVE));
 	}
 
 	@Override
-	public boolean equals(Object obj) {
-		if (this == obj) {
+	public boolean equals(Object o) {
+		if (this == o) {
 			return true;
 		}
-		if (obj == null) {
+		if (o == null || getClass() != o.getClass()) {
 			return false;
 		}
-		if (getClass() != obj.getClass()) {
-			return false;
-		}
-		ExceptionHandler other = (ExceptionHandler) obj;
-		if (catchType == null) {
-			if (other.catchType != null) {
-				return false;
-			}
-		} else if (!catchType.equals(other.catchType)) {
-			return false;
-		}
-		return handleOffset == other.handleOffset;
+		ExceptionHandler that = (ExceptionHandler) o;
+		return handlerOffset == that.handlerOffset
+				&& catchTypes.equals(that.catchTypes)
+				&& Objects.equals(tryBlock, that.tryBlock);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(catchTypes, handlerOffset /* , tryBlock */);
+	}
+
+	public String catchTypeStr() {
+		return catchTypes.isEmpty() ? "all" : Utils.listToString(catchTypes, " | ", ClassInfo::getShortName);
 	}
 
 	@Override
 	public String toString() {
-		return (catchType == null ? "all"
-				: catchType.getShortName()) + " -> " + InsnUtils.formatOffset(handleOffset);
+		return catchTypeStr() + " -> " + InsnUtils.formatOffset(handlerOffset);
 	}
 }

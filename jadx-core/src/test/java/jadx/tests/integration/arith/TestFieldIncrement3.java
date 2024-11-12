@@ -2,13 +2,10 @@ package jadx.tests.integration.arith;
 
 import java.util.Random;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestFieldIncrement3 extends IntegrationTest {
 
@@ -19,25 +16,25 @@ public class TestFieldIncrement3 extends IntegrationTest {
 		static Vector2 directVect = new Vector2();
 		static Vector2 newPos = new Vector2();
 
-		private static void test() {
+		public static void test() {
 			Random rd = new Random();
 			int direction = rd.nextInt(7);
 			switch (direction) {
 				case 0:
-					targetPos.x = (float) (((tileX + 1) * 55) + 55);
-					targetPos.y = (float) (((tileY + 1) * 35) + 35);
+					targetPos.x = ((tileX + 1) * 55) + 55;
+					targetPos.y = ((tileY + 1) * 35) + 35;
 					break;
 				case 2:
-					targetPos.x = (float) (((tileX + 1) * 55) + 55);
-					targetPos.y = (float) (((tileY - 1) * 35) + 35);
+					targetPos.x = ((tileX + 1) * 55) + 55;
+					targetPos.y = ((tileY - 1) * 35) + 35;
 					break;
 				case 4:
-					targetPos.x = (float) (((tileX - 1) * 55) + 55);
-					targetPos.y = (float) (((tileY - 1) * 35) + 35);
+					targetPos.x = ((tileX - 1) * 55) + 55;
+					targetPos.y = ((tileY - 1) * 35) + 35;
 					break;
 				case 6:
-					targetPos.x = (float) (((tileX - 1) * 55) + 55);
-					targetPos.y = (float) (((tileY + 1) * 35) + 35);
+					targetPos.x = ((tileX - 1) * 55) + 55;
+					targetPos.y = ((tileY + 1) * 35) + 35;
 					break;
 				default:
 					break;
@@ -45,7 +42,7 @@ public class TestFieldIncrement3 extends IntegrationTest {
 			directVect.x = targetPos.x - newPos.x;
 			directVect.y = targetPos.y - newPos.y;
 
-			float hPos = (float) Math.sqrt((double) ((directVect.x * directVect.x) + (directVect.y * directVect.y)));
+			float hPos = (float) Math.sqrt((directVect.x * directVect.x) + (directVect.y * directVect.y));
 			directVect.x /= hPos;
 			directVect.y /= hPos;
 		}
@@ -67,9 +64,8 @@ public class TestFieldIncrement3 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsString("directVect.x = targetPos.x - newPos.x;"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.contains("directVect.x = targetPos.x - newPos.x;");
 	}
 }

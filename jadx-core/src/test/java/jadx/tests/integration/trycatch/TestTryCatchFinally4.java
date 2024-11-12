@@ -5,13 +5,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestTryCatchFinally4 extends IntegrationTest {
 
@@ -25,7 +22,7 @@ public class TestTryCatchFinally4 extends IntegrationTest {
 				try {
 					outputStream.close();
 					file.delete();
-				} catch (IOException e) {
+				} catch (IOException ignored) {
 				}
 			}
 		}
@@ -33,14 +30,13 @@ public class TestTryCatchFinally4 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("File file = File.createTempFile(\"test\", \"txt\");"));
-		assertThat(code, containsOne("OutputStream outputStream = new FileOutputStream(file);"));
-		assertThat(code, containsOne("outputStream.write(1);"));
-		assertThat(code, containsOne("} finally {"));
-		assertThat(code, containsOne("outputStream.close();"));
-		assertThat(code, containsOne("} catch (IOException e) {"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("File file = File.createTempFile(\"test\", \"txt\");")
+				.containsOne("OutputStream outputStream = new FileOutputStream(file);")
+				.containsOne("outputStream.write(1);")
+				.containsOne("} finally {")
+				.containsOne("outputStream.close();")
+				.containsOne("} catch (IOException e) {");
 	}
 }

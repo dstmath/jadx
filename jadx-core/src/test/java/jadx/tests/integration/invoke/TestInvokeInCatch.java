@@ -2,22 +2,18 @@ package jadx.tests.integration.invoke;
 
 import java.io.IOException;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
 
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.not;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestInvokeInCatch extends IntegrationTest {
 
 	public static class TestCls {
 		private static final String TAG = "TAG";
 
-		private void test(int[] a, int b) {
+		public void test(int[] a, int b) {
 			try {
 				exc();
 			} catch (IOException e) {
@@ -37,14 +33,13 @@ public class TestInvokeInCatch extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("try {"));
-		assertThat(code, containsOne("exc();"));
-		assertThat(code, not(containsString("return;")));
-		assertThat(code, containsOne("} catch (IOException e) {"));
-		assertThat(code, containsOne("if (b == 1) {"));
-		assertThat(code, containsOne("log(TAG, \"Error: {}\", e.getMessage());"));
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("try {")
+				.containsOne("exc();")
+				.doesNotContain("return;")
+				.containsOne("} catch (IOException e) {")
+				.containsOne("if (b == 1) {")
+				.containsOne("log(TAG, \"Error: {}\", e.getMessage());");
 	}
 }

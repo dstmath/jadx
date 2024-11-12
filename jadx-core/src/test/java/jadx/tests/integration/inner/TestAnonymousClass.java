@@ -3,14 +3,11 @@ package jadx.tests.integration.inner;
 import java.io.File;
 import java.io.FilenameFilter;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
 
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.not;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestAnonymousClass extends IntegrationTest {
 
@@ -29,13 +26,22 @@ public class TestAnonymousClass extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.contains("new File(\"a\").list(new FilenameFilter()")
+				.doesNotContain("synthetic")
+				.doesNotContain("this")
+				.doesNotContain("null")
+				.doesNotContain("AnonymousClass_")
+				.doesNotContain("class AnonymousClass");
+	}
 
-		assertThat(code, containsString("new File(\"a\").list(new FilenameFilter()"));
-		assertThat(code, not(containsString("synthetic")));
-		assertThat(code, not(containsString("this")));
-		assertThat(code, not(containsString("null")));
-		assertThat(code, not(containsString("AnonymousClass_")));
+	@Test
+	public void testNoInline() {
+		getArgs().setInlineAnonymousClasses(false);
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.contains("class AnonymousClass1 implements FilenameFilter {")
+				.containsOne("new AnonymousClass1()");
 	}
 }

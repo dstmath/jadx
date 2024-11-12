@@ -3,14 +3,12 @@ package jadx.tests.integration.loops;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestBreakInComplexIf extends IntegrationTest {
 
@@ -39,27 +37,32 @@ public class TestBreakInComplexIf extends IntegrationTest {
 		}
 
 		public void check() {
-			Map<String, Point> map = new HashMap<>();
-			map.put("3", new Point(100, 100));
-			map.put("4", new Point(60, 100));
-			assertThat(test(map, 2), is(3));
+			Map<String, Point> first = new HashMap<>();
+			first.put("3", new Point(100, 100));
+			first.put("4", new Point(60, 100));
+			assertThat(test(first, 2)).isEqualTo(3);
+
+			Map<String, Point> second = new HashMap<>();
+			second.put("3", new Point(100, 100));
+			second.put("4", new Point(60, 0)); // check break
+			second.put("5", new Point(60, 100));
+			assertThat(test(second, 2)).isEqualTo(2);
 		}
 	}
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("if (tile == null || tile.y != 100) {"));
-		assertThat(code, containsOne("break;"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("if (tile == null || tile.y != 100) {")
+				.containsOne("break;");
 	}
 
 	@Test
 	public void testNoDebug() {
 		noDebugInfo();
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-		assertThat(code, containsOne("break;"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("break;");
 	}
 }

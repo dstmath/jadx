@@ -1,6 +1,6 @@
 package jadx.gui.treemodel;
 
-import javax.swing.*;
+import javax.swing.Icon;
 
 public class TextNode extends JNode {
 
@@ -15,11 +15,6 @@ public class TextNode extends JNode {
 	@Override
 	public JClass getJParent() {
 		return null;
-	}
-
-	@Override
-	public int getLine() {
-		return 0;
 	}
 
 	@Override

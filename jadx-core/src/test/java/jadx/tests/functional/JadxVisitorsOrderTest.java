@@ -5,7 +5,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,22 +14,24 @@ import jadx.core.Jadx;
 import jadx.core.dex.visitors.IDexTreeVisitor;
 import jadx.core.dex.visitors.JadxVisitor;
 
-import static org.hamcrest.Matchers.empty;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class JadxVisitorsOrderTest {
-
 	private static final Logger LOG = LoggerFactory.getLogger(JadxVisitorsOrderTest.class);
 
 	@Test
 	public void testOrder() {
-		List<IDexTreeVisitor> passes = Jadx.getPassesList(new JadxArgs());
+		checkPassList(Jadx.getPassesList(new JadxArgs()));
+		checkPassList(Jadx.getPreDecompilePassesList());
+		checkPassList(Jadx.getFallbackPassesList());
+	}
 
+	private void checkPassList(List<IDexTreeVisitor> passes) {
 		List<String> errors = check(passes);
 		for (String str : errors) {
 			LOG.error(str);
 		}
-		assertThat(errors, empty());
+		assertThat(errors).isEmpty();
 	}
 
 	private static List<String> check(List<IDexTreeVisitor> passes) {
@@ -40,19 +42,23 @@ public class JadxVisitorsOrderTest {
 		List<String> errors = new ArrayList<>();
 
 		Set<String> names = new HashSet<>();
+		Set<Class<?>> passClsSet = new HashSet<>();
 		for (int i = 0; i < passes.size(); i++) {
 			IDexTreeVisitor pass = passes.get(i);
-			JadxVisitor info = pass.getClass().getAnnotation(JadxVisitor.class);
+			Class<? extends IDexTreeVisitor> passClass = pass.getClass();
+			JadxVisitor info = passClass.getAnnotation(JadxVisitor.class);
 			if (info == null) {
-				LOG.warn("No JadxVisitor annotation for visitor: {}", pass.getClass().getName());
+				LOG.warn("No JadxVisitor annotation for visitor: {}", passClass.getName());
 				continue;
 			}
-			String passName = pass.getClass().getSimpleName();
-			if (!names.add(passName)) {
-				errors.add("Visitor name conflict: " + passName + ", class: " + pass.getClass().getName());
+			boolean firstOccurrence = passClsSet.add(passClass);
+			String passName = passClass.getSimpleName();
+			if (firstOccurrence && !names.add(passName)) {
+				errors.add("Visitor name conflict: " + passName + ", class: " + passClass.getName());
 			}
 			for (Class<? extends IDexTreeVisitor> cls : info.runBefore()) {
-				if (classList.indexOf(cls) < i) {
+				int beforeIndex = classList.indexOf(cls);
+				if (beforeIndex != -1 && beforeIndex < i) {
 					errors.add("Pass " + passName + " must be before " + cls.getSimpleName());
 				}
 			}

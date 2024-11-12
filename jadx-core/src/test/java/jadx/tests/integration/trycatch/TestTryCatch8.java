@@ -1,15 +1,10 @@
 package jadx.tests.integration.trycatch;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
 
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.hamcrest.Matchers.isA;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestTryCatch8 extends IntegrationTest {
 
@@ -31,32 +26,39 @@ public class TestTryCatch8 extends IntegrationTest {
 			synchronized (this) {
 				try {
 					throw new MyException();
-				} catch (MyException e) {
-					this.e = e;
-				} catch (Exception x) {
-					this.e = new MyException("MyExc", x);
+				} catch (MyException myExc) {
+					this.e = myExc;
+				} catch (Exception ex) {
+					this.e = new MyException("MyExc", ex);
 				}
 			}
 		}
 
 		public void check() {
 			test();
-			assertThat(e, notNullValue());
-			assertThat(e, isA(MyException.class));
-			assertThat(e.getMessage(), nullValue());
+			assertThat(e).isInstanceOf(MyException.class);
+			assertThat(e.getMessage()).isNull();
 		}
 	}
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("synchronized (this) {")
+				.containsOne("throw new MyException();")
+				.containsOne("} catch (MyException myExc) {")
+				.containsOne("this.e = myExc;")
+				.containsOne("} catch (Exception ex) {")
+				.containsOne("this.e = new MyException(\"MyExc\", ex);");
+	}
 
-		assertThat(code, containsOne("synchronized (this) {"));
-		assertThat(code, containsOne("throw new MyException();"));
-		assertThat(code, containsOne("} catch (MyException e) {"));
-		assertThat(code, containsOne("this.e = e;"));
-		assertThat(code, containsOne("} catch (Exception x) {"));
-		assertThat(code, containsOne("this.e = new MyException(\"MyExc\", x);"));
+	@Test
+	public void testNoDebug() {
+		noDebugInfo();
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("synchronized (this) {")
+				.containsOne("throw new MyException();");
 	}
 }

@@ -5,11 +5,13 @@
 
 # IntelliJ Idea files
 .idea/
+.run/
 out/
 *.iml
 *.ipr
 *.iws
 .attach_pid*
+*.hprof
 
 **/.DS_Store
 
@@ -20,12 +22,20 @@ classes/
 idea/
 .gradle/
 node_modules/
+.vscode/
 
 jadx-output/
 *-tmp/
+**/tmp/
+*.jobf
+*.jadx
 
-*.dex
 *.class
 *.dump
 *.log
 *.cfg
+*.orig
+quark.json
+
+cliff.toml
+jadx-gui/src/main/resources/logback.xml

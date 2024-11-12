@@ -2,19 +2,16 @@ package jadx.tests.integration.loops;
 
 import java.util.List;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestNestedLoops2 extends IntegrationTest {
 
 	public static class TestCls {
 
-		private boolean test(List<String> list) {
+		public boolean test(List<String> list) {
 			int j = 0;
 			for (int i = 0; i < list.size(); i++) {
 				String s = list.get(i);
@@ -28,10 +25,9 @@ public class TestNestedLoops2 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("for (int i = 0; i < list.size(); i++) {"));
-		assertThat(code, containsOne("while (j < ((String) list.get(i)).length()) {"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("for (int i = 0; i < list.size(); i++) {")
+				.containsOne("while (j < s.length()) {");
 	}
 }

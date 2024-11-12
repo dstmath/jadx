@@ -1,25 +1,24 @@
 package jadx.tests.integration.debuginfo;
 
 import java.lang.ref.WeakReference;
-import java.util.Map;
 
-import org.junit.Test;
-
-import jadx.core.codegen.CodeWriter;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
+import jadx.tests.api.extensions.profiles.TestProfile;
+import jadx.tests.api.extensions.profiles.TestWithProfiles;
 
-import static org.junit.Assert.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class TestLineNumbers2 extends IntegrationTest {
 
 	public static class TestCls {
 		private WeakReference<TestCls> f;
 
+		// keep constructor at line 18
 		public TestCls(TestCls s) {
 		}
 
-		TestCls test(TestCls s) {
+		public TestCls test(TestCls s) {
 			TestCls store = f != null ? f.get() : null;
 			if (store == null) {
 				store = new TestCls(s);
@@ -33,14 +32,16 @@ public class TestLineNumbers2 extends IntegrationTest {
 		}
 	}
 
-	@Test
+	@TestWithProfiles({ TestProfile.DX_J8, TestProfile.JAVA8 })
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		CodeWriter codeWriter = cls.getCode();
-		String code = codeWriter.toString();
+		printLineNumbers();
 
-		Map<Integer, Integer> lineMapping = codeWriter.getLineMapping();
-		assertEquals("{8=18, 11=22, 12=23, 13=24, 14=28, 16=25, 17=26, 18=28, 21=31, 22=32}",
-				lineMapping.toString());
+		ClassNode cls = getClassNode(TestCls.class);
+		String linesMapStr = cls.getCode().getCodeMetadata().getLineMapping().toString();
+		if (isJavaInput()) {
+			assertThat(linesMapStr).isEqualTo("{6=16, 9=17, 12=21, 13=22, 14=23, 15=24, 16=25, 18=27, 21=30, 22=31}");
+		} else {
+			assertThat(linesMapStr).isEqualTo("{6=16, 9=17, 12=21, 13=22, 14=23, 15=24, 16=25, 17=27, 19=27, 22=30, 23=31}");
+		}
 	}
 }

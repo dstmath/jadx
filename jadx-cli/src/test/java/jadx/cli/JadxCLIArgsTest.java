@@ -1,11 +1,14 @@
 package jadx.cli;
 
-import org.junit.Test;
+import java.util.Collections;
+import java.util.Map;
+
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThat;
+import static jadx.core.utils.Utils.newConstStringMap;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class JadxCLIArgsTest {
 
@@ -13,35 +16,72 @@ public class JadxCLIArgsTest {
 
 	@Test
 	public void testInvertedBooleanOption() {
-		assertThat(parse("--no-replace-consts").isReplaceConsts(), is(false));
-		assertThat(parse("").isReplaceConsts(), is(true));
+		assertThat(parse("--no-replace-consts").isReplaceConsts()).isFalse();
+		assertThat(parse("").isReplaceConsts()).isTrue();
 	}
 
 	@Test
 	public void testEscapeUnicodeOption() {
-		assertThat(parse("--escape-unicode").isEscapeUnicode(), is(true));
-		assertThat(parse("").isEscapeUnicode(), is(false));
+		assertThat(parse("--escape-unicode").isEscapeUnicode()).isTrue();
+		assertThat(parse("").isEscapeUnicode()).isFalse();
 	}
 
 	@Test
 	public void testSrcOption() {
-		assertThat(parse("--no-src").isSkipSources(), is(true));
-		assertThat(parse("-s").isSkipSources(), is(true));
-		assertThat(parse("").isSkipSources(), is(false));
+		assertThat(parse("--no-src").isSkipSources()).isTrue();
+		assertThat(parse("-s").isSkipSources()).isTrue();
+		assertThat(parse("").isSkipSources()).isFalse();
 	}
 
 	@Test
 	public void testOptionsOverride() {
-		assertThat(override(new JadxCLIArgs(), "--no-imports").isUseImports(), is(false));
-		assertThat(override(new JadxCLIArgs(), "").isUseImports(), is(true));
+		assertThat(override(new JadxCLIArgs(), "--no-imports").isUseImports()).isFalse();
+		assertThat(override(new JadxCLIArgs(), "--no-debug-info").isDebugInfo()).isFalse();
+		assertThat(override(new JadxCLIArgs(), "").isUseImports()).isTrue();
 
 		JadxCLIArgs args = new JadxCLIArgs();
 		args.useImports = false;
-		assertThat(override(args, "--no-imports").isUseImports(), is(false));
+		assertThat(override(args, "--no-imports").isUseImports()).isFalse();
+		args.debugInfo = false;
+		assertThat(override(args, "--no-debug-info").isDebugInfo()).isFalse();
 
 		args = new JadxCLIArgs();
 		args.useImports = false;
-		assertThat(override(args, "").isUseImports(), is(false));
+		assertThat(override(args, "").isUseImports()).isFalse();
+	}
+
+	@Test
+	public void testPluginOptionsOverride() {
+		// add key to empty base map
+		checkPluginOptionsMerge(
+				Collections.emptyMap(),
+				"-Poption=otherValue",
+				newConstStringMap("option", "otherValue"));
+
+		// override one key
+		checkPluginOptionsMerge(
+				newConstStringMap("option", "value"),
+				"-Poption=otherValue",
+				newConstStringMap("option", "otherValue"));
+
+		// merge different keys
+		checkPluginOptionsMerge(
+				Collections.singletonMap("option1", "value1"),
+				"-Poption2=otherValue2",
+				newConstStringMap("option1", "value1", "option2", "otherValue2"));
+
+		// merge and override
+		checkPluginOptionsMerge(
+				newConstStringMap("option1", "value1", "option2", "value2"),
+				"-Poption2=otherValue2",
+				newConstStringMap("option1", "value1", "option2", "otherValue2"));
+	}
+
+	private void checkPluginOptionsMerge(Map<String, String> baseMap, String providedArgs, Map<String, String> expectedMap) {
+		JadxCLIArgs args = new JadxCLIArgs();
+		args.pluginOptions = baseMap;
+		Map<String, String> resultMap = override(args, providedArgs).getPluginOptions();
+		assertThat(resultMap).isEqualTo(expectedMap);
 	}
 
 	private JadxCLIArgs parse(String... args) {
@@ -49,15 +89,15 @@ public class JadxCLIArgsTest {
 	}
 
 	private JadxCLIArgs parse(JadxCLIArgs jadxArgs, String... args) {
-		boolean res = jadxArgs.processArgs(args);
-		assertThat(res, is(true));
-		LOG.info("Jadx args: {}", jadxArgs.toJadxArgs());
-		return jadxArgs;
+		return check(jadxArgs, jadxArgs.processArgs(args));
 	}
 
 	private JadxCLIArgs override(JadxCLIArgs jadxArgs, String... args) {
-		boolean res = jadxArgs.overrideProvided(args);
-		assertThat(res, is(true));
+		return check(jadxArgs, jadxArgs.overrideProvided(args));
+	}
+
+	private static JadxCLIArgs check(JadxCLIArgs jadxArgs, boolean res) {
+		assertThat(res).isTrue();
 		LOG.info("Jadx args: {}", jadxArgs.toJadxArgs());
 		return jadxArgs;
 	}

@@ -1,17 +1,14 @@
 package jadx.tests.integration.variables;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestVariables2 extends IntegrationTest {
 
 	public static class TestCls {
-		Object test(Object s) {
+		public Object test(Object s) {
 			Object store = s != null ? s : null;
 			if (store == null) {
 				store = new Object();
@@ -23,9 +20,16 @@ public class TestVariables2 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.contains("Object store = s != null ? s : null;");
+	}
 
-		assertThat(code, containsString("Object store = s != null ? s : null;"));
+	@Test
+	public void testNoDebug() {
+		noDebugInfo();
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.contains("Object obj2 = obj != null ? obj : null;");
 	}
 }

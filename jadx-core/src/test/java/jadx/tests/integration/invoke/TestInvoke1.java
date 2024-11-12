@@ -2,13 +2,10 @@ package jadx.tests.integration.invoke;
 
 import java.io.IOException;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestInvoke1 extends IntegrationTest {
 
@@ -16,7 +13,7 @@ public class TestInvoke1 extends IntegrationTest {
 
 		private A is;
 
-		private C test(int start) throws IOException {
+		public C test(int start) throws IOException {
 			int id = is.readInt32();
 			String name = is.readString16Fixed(128);
 
@@ -61,9 +58,8 @@ public class TestInvoke1 extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("C pkg = new C(id, name, types, keys);"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("C pkg = new C(id, name, types, keys);");
 	}
 }

@@ -1,13 +1,11 @@
 package jadx.tests.integration.enums;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThat;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
 
 public class TestEnums4 extends IntegrationTest {
 
@@ -24,8 +22,8 @@ public class TestEnums4 extends IntegrationTest {
 
 			private final String[] exts;
 
-			private ResType(String... exts) {
-				this.exts = exts;
+			ResType(String... extensions) {
+				this.exts = extensions;
 			}
 
 			public String[] getExts() {
@@ -34,17 +32,16 @@ public class TestEnums4 extends IntegrationTest {
 		}
 
 		public void check() {
-			assertThat(ResType.CODE.getExts(), is(new String[]{".dex", ".class"}));
+			assertThat(ResType.CODE.getExts()).containsExactly(new String[] { ".dex", ".class" });
 		}
 	}
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("CODE(\".dex\", \".class\"),"));
-		assertThat(code, containsOne("ResType(String... exts) {"));
-//		assertThat(code, not(containsString("private ResType")));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("CODE(\".dex\", \".class\"),")
+				.containsOne("ResType(String... extensions) {");
+		// assertThat(code, not(containsString("private ResType")));
 	}
 }

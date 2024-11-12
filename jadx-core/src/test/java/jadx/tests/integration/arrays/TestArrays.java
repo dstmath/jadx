@@ -1,18 +1,15 @@
 package jadx.tests.integration.arrays;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.junit.Assert.assertThat;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestArrays extends IntegrationTest {
 	public static class TestCls {
 
 		public int test1(int i) {
-			int[] a = new int[]{1, 2, 3, 5};
+			int[] a = new int[] { 1, 2, 3, 5 };
 			return a[i];
 		}
 
@@ -25,9 +22,8 @@ public class TestArrays extends IntegrationTest {
 	@Test
 	public void test() {
 		noDebugInfo();
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsOne("return new int[]{1, 2, 3, 5}[i];"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.containsOne("return new int[]{1, 2, 3, 5}[i];");
 	}
 }

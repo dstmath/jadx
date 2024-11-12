@@ -1,62 +1,165 @@
 package jadx.gui.ui;
 
-import javax.swing.*;
-import javax.swing.event.MenuEvent;
-import javax.swing.event.MenuListener;
-import javax.swing.event.TreeExpansionEvent;
-import javax.swing.event.TreeWillExpandListener;
-import javax.swing.filechooser.FileNameExtensionFilter;
-import javax.swing.tree.DefaultMutableTreeNode;
-import javax.swing.tree.DefaultTreeCellRenderer;
-import javax.swing.tree.DefaultTreeModel;
-import javax.swing.tree.ExpandVetoException;
-import javax.swing.tree.TreeNode;
-import javax.swing.tree.TreePath;
-import javax.swing.tree.TreeSelectionModel;
-import java.awt.*;
+import java.awt.BorderLayout;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.DisplayMode;
+import java.awt.Font;
+import java.awt.GraphicsDevice;
+import java.awt.GraphicsEnvironment;
 import java.awt.dnd.DnDConstants;
 import java.awt.dnd.DropTarget;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.io.File;
-import java.io.FileInputStream;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+import java.awt.geom.AffineTransform;
+import java.io.InputStream;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Locale;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
+import javax.swing.AbstractAction;
+import javax.swing.Action;
+import javax.swing.Box;
+import javax.swing.ImageIcon;
+import javax.swing.JCheckBox;
+import javax.swing.JCheckBoxMenuItem;
+import javax.swing.JDialog;
+import javax.swing.JFileChooser;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JMenu;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
+import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
+import javax.swing.JToggleButton;
+import javax.swing.JToolBar;
+import javax.swing.JTree;
+import javax.swing.SwingUtilities;
+import javax.swing.ToolTipManager;
+import javax.swing.WindowConstants;
+import javax.swing.event.TreeExpansionEvent;
+import javax.swing.event.TreeWillExpandListener;
+import javax.swing.tree.DefaultMutableTreeNode;
+import javax.swing.tree.DefaultTreeCellRenderer;
+import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreeNode;
+import javax.swing.tree.TreePath;
+import javax.swing.tree.TreeSelectionModel;
+
+import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.Theme;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import ch.qos.logback.classic.Level;
+
+import jadx.api.JadxArgs;
+import jadx.api.JavaClass;
+import jadx.api.JavaNode;
 import jadx.api.ResourceFile;
+import jadx.api.plugins.events.JadxEvents;
+import jadx.api.plugins.events.types.ReloadProject;
+import jadx.api.plugins.events.types.ReloadSettingsWindow;
+import jadx.api.plugins.utils.CommonFileUtils;
+import jadx.core.Jadx;
+import jadx.core.export.TemplateFile;
+import jadx.core.utils.ListUtils;
+import jadx.core.utils.StringUtils;
+import jadx.core.utils.android.AndroidManifestParser;
+import jadx.core.utils.android.AppAttribute;
+import jadx.core.utils.android.ApplicationParams;
+import jadx.core.utils.exceptions.JadxRuntimeException;
+import jadx.core.utils.files.FileUtils;
 import jadx.gui.JadxWrapper;
-import jadx.gui.jobs.BackgroundWorker;
-import jadx.gui.jobs.DecompileJob;
-import jadx.gui.jobs.IndexJob;
+import jadx.gui.cache.manager.CacheManager;
+import jadx.gui.device.debugger.BreakpointManager;
+import jadx.gui.events.services.RenameService;
+import jadx.gui.events.types.JadxGuiEventsImpl;
+import jadx.gui.jobs.BackgroundExecutor;
+import jadx.gui.jobs.DecompileTask;
+import jadx.gui.jobs.ExportTask;
+import jadx.gui.jobs.TaskStatus;
+import jadx.gui.logs.LogCollector;
+import jadx.gui.logs.LogOptions;
+import jadx.gui.logs.LogPanel;
+import jadx.gui.plugins.mappings.RenameMappingsGui;
+import jadx.gui.plugins.quark.QuarkDialog;
+import jadx.gui.settings.JadxProject;
 import jadx.gui.settings.JadxSettings;
-import jadx.gui.settings.JadxSettingsWindow;
-import jadx.gui.treemodel.JCertificate;
+import jadx.gui.settings.ui.JadxSettingsWindow;
+import jadx.gui.settings.ui.plugins.PluginSettings;
+import jadx.gui.treemodel.ApkSignature;
 import jadx.gui.treemodel.JClass;
 import jadx.gui.treemodel.JLoadableNode;
 import jadx.gui.treemodel.JNode;
+import jadx.gui.treemodel.JPackage;
 import jadx.gui.treemodel.JResource;
 import jadx.gui.treemodel.JRoot;
+import jadx.gui.ui.action.ActionModel;
+import jadx.gui.ui.action.JadxGuiAction;
+import jadx.gui.ui.codearea.AbstractCodeArea;
+import jadx.gui.ui.codearea.AbstractCodeContentPanel;
+import jadx.gui.ui.codearea.EditorTheme;
+import jadx.gui.ui.codearea.EditorViewState;
+import jadx.gui.ui.dialog.ADBDialog;
+import jadx.gui.ui.dialog.AboutDialog;
+import jadx.gui.ui.dialog.LogViewerDialog;
+import jadx.gui.ui.dialog.SearchDialog;
+import jadx.gui.ui.filedialog.FileDialogWrapper;
+import jadx.gui.ui.filedialog.FileOpenMode;
+import jadx.gui.ui.menu.HiddenMenuItem;
+import jadx.gui.ui.menu.JadxMenu;
+import jadx.gui.ui.menu.JadxMenuBar;
+import jadx.gui.ui.panel.ContentPanel;
+import jadx.gui.ui.panel.IssuesPanel;
+import jadx.gui.ui.panel.JDebuggerPanel;
+import jadx.gui.ui.panel.ProgressPanel;
+import jadx.gui.ui.popupmenu.RecentProjectsMenuListener;
+import jadx.gui.ui.tab.EditorSyncManager;
+import jadx.gui.ui.tab.NavigationController;
+import jadx.gui.ui.tab.QuickTabsTree;
+import jadx.gui.ui.tab.TabbedPane;
+import jadx.gui.ui.tab.TabsController;
+import jadx.gui.ui.tab.dnd.TabDndController;
+import jadx.gui.ui.treenodes.StartPageNode;
+import jadx.gui.ui.treenodes.SummaryNode;
 import jadx.gui.update.JadxUpdate;
-import jadx.gui.update.JadxUpdate.IUpdateCallback;
-import jadx.gui.update.data.Release;
 import jadx.gui.utils.CacheObject;
+import jadx.gui.utils.FontUtils;
+import jadx.gui.utils.ILoadListener;
+import jadx.gui.utils.LafManager;
 import jadx.gui.utils.Link;
 import jadx.gui.utils.NLS;
-import jadx.gui.utils.JumpPosition;
-import jadx.gui.utils.Utils;
+import jadx.gui.utils.UiUtils;
+import jadx.gui.utils.dbg.UIWatchDog;
+import jadx.gui.utils.fileswatcher.LiveReloadWorker;
+import jadx.gui.utils.shortcut.ShortcutsController;
+import jadx.gui.utils.ui.ActionHandler;
+import jadx.gui.utils.ui.NodeLabel;
 
-import static javax.swing.KeyStroke.getKeyStroke;
-
-@SuppressWarnings("serial")
 public class MainWindow extends JFrame {
 	private static final Logger LOG = LoggerFactory.getLogger(MainWindow.class);
 
@@ -64,32 +167,56 @@ public class MainWindow extends JFrame {
 
 	private static final double BORDER_RATIO = 0.15;
 	private static final double WINDOW_RATIO = 1 - BORDER_RATIO * 2;
-	private static final double SPLIT_PANE_RESIZE_WEIGHT = 0.15;
+	public static final double SPLIT_PANE_RESIZE_WEIGHT = 0.15;
 
-	private static final ImageIcon ICON_OPEN = Utils.openIcon("folder");
-	private static final ImageIcon ICON_SAVE_ALL = Utils.openIcon("disk_multiple");
-	private static final ImageIcon ICON_EXPORT = Utils.openIcon("database_save");
-	private static final ImageIcon ICON_CLOSE = Utils.openIcon("cross");
-	private static final ImageIcon ICON_SYNC = Utils.openIcon("sync");
-	private static final ImageIcon ICON_FLAT_PKG = Utils.openIcon("empty_logical_package_obj");
-	private static final ImageIcon ICON_SEARCH = Utils.openIcon("wand");
-	private static final ImageIcon ICON_FIND = Utils.openIcon("magnifier");
-	private static final ImageIcon ICON_BACK = Utils.openIcon("icon_back");
-	private static final ImageIcon ICON_FORWARD = Utils.openIcon("icon_forward");
-	private static final ImageIcon ICON_PREF = Utils.openIcon("wrench");
-	private static final ImageIcon ICON_DEOBF = Utils.openIcon("lock_edit");
-	private static final ImageIcon ICON_LOG = Utils.openIcon("report");
+	private static final ImageIcon ICON_ADD_FILES = UiUtils.openSvgIcon("ui/addFile");
+	private static final ImageIcon ICON_RELOAD = UiUtils.openSvgIcon("ui/refresh");
+	private static final ImageIcon ICON_EXPORT = UiUtils.openSvgIcon("ui/export");
+	private static final ImageIcon ICON_EXIT = UiUtils.openSvgIcon("ui/exit");
+	private static final ImageIcon ICON_SYNC = UiUtils.openSvgIcon("ui/pagination");
+	private static final ImageIcon ICON_FLAT_PKG = UiUtils.openSvgIcon("ui/moduleGroup");
+	private static final ImageIcon ICON_SEARCH = UiUtils.openSvgIcon("ui/find");
+	private static final ImageIcon ICON_FIND = UiUtils.openSvgIcon("ui/ejbFinderMethod");
+	private static final ImageIcon ICON_COMMENT_SEARCH = UiUtils.openSvgIcon("ui/usagesFinder");
+	private static final ImageIcon ICON_MAIN_ACTIVITY = UiUtils.openSvgIcon("ui/home");
+	private static final ImageIcon ICON_BACK = UiUtils.openSvgIcon("ui/left");
+	private static final ImageIcon ICON_FORWARD = UiUtils.openSvgIcon("ui/right");
+	private static final ImageIcon ICON_QUARK = UiUtils.openSvgIcon("ui/quark");
+	private static final ImageIcon ICON_PREF = UiUtils.openSvgIcon("ui/settings");
+	private static final ImageIcon ICON_DEOBF = UiUtils.openSvgIcon("ui/helmChartLock");
+	private static final ImageIcon ICON_DECOMPILE_ALL = UiUtils.openSvgIcon("ui/runAll");
+	private static final ImageIcon ICON_LOG = UiUtils.openSvgIcon("ui/logVerbose");
+	private static final ImageIcon ICON_INFO = UiUtils.openSvgIcon("ui/showInfos");
+	private static final ImageIcon ICON_DEBUGGER = UiUtils.openSvgIcon("ui/startDebugger");
 
 	private final transient JadxWrapper wrapper;
 	private final transient JadxSettings settings;
 	private final transient CacheObject cacheObject;
+	private final transient CacheManager cacheManager;
+	private final transient BackgroundExecutor backgroundExecutor;
+	private final transient JadxGuiEventsImpl events = new JadxGuiEventsImpl();
 
-	private JPanel mainPanel;
+	private final TabsController tabsController;
+	private final NavigationController navController;
+	private final EditorSyncManager editorSyncManager;
+
+	private transient @NotNull JadxProject project;
+
+	private transient JadxGuiAction newProjectAction;
+	private transient JadxGuiAction saveProjectAction;
+
+	private transient JPanel mainPanel;
+	private transient JSplitPane treeSplitPane;
+	private transient JSplitPane rightSplitPane;
+	private transient JSplitPane bottomSplitPane;
+	private transient JSplitPane quickTabsAndCodeSplitPane;
 
 	private JTree tree;
 	private DefaultTreeModel treeModel;
 	private JRoot treeRoot;
 	private TabbedPane tabbedPane;
+	private HeapUsageBar heapUsageBar;
+	private transient boolean treeReloading;
 
 	private boolean isFlattenPackage;
 	private JToggleButton flatPkgButton;
@@ -98,40 +225,96 @@ public class MainWindow extends JFrame {
 	private JToggleButton deobfToggleBtn;
 	private JCheckBoxMenuItem deobfMenuItem;
 
+	private JCheckBoxMenuItem liveReloadMenuItem;
+	private final LiveReloadWorker liveReloadWorker;
+
 	private transient Link updateLink;
 	private transient ProgressPanel progressPane;
-	private transient BackgroundWorker backgroundWorker;
 	private transient Theme editorTheme;
 
+	private transient IssuesPanel issuesPanel;
+	private transient @Nullable LogPanel logPanel;
+	private transient @Nullable JDebuggerPanel debuggerPanel;
+	private transient @Nullable QuickTabsTree quickTabsTree;
+
+	private final List<ILoadListener> loadListeners = new ArrayList<>();
+	private final List<Consumer<JRoot>> treeUpdateListener = new ArrayList<>();
+	private boolean loaded;
+	private boolean settingsOpen = false;
+
+	private final ShortcutsController shortcutsController;
+	private JadxMenuBar menuBar;
+	private JMenu pluginsMenu;
+
+	private final transient RenameMappingsGui renameMappings;
+
 	public MainWindow(JadxSettings settings) {
-		this.wrapper = new JadxWrapper(settings);
 		this.settings = settings;
 		this.cacheObject = new CacheObject();
+		this.project = new JadxProject(this);
+		this.wrapper = new JadxWrapper(this);
+		this.liveReloadWorker = new LiveReloadWorker(this);
+		this.renameMappings = new RenameMappingsGui(this);
+		this.cacheManager = new CacheManager(settings);
+		this.shortcutsController = new ShortcutsController(settings);
+		this.tabsController = new TabsController(this);
+		this.navController = new NavigationController(this);
 
+		JadxEventQueue.register();
 		resetCache();
+		FontUtils.registerBundledFonts();
+		setEditorTheme(settings.getEditorThemePath());
 		initUI();
+		this.editorSyncManager = new EditorSyncManager(this, tabbedPane);
+		this.backgroundExecutor = new BackgroundExecutor(settings, progressPane);
 		initMenuAndToolbar();
-		applySettings();
+		UiUtils.setWindowIcons(this);
+		this.shortcutsController.registerMouseEventListener(this);
+		loadSettings();
+		initEvents();
+
+		update();
 		checkForUpdate();
 	}
 
-	private void applySettings() {
-		setFont(settings.getFont());
-		setEditorTheme(settings.getEditorThemePath());
-		loadSettings();
-	}
-
-	public void open() {
+	public void init() {
 		pack();
 		setLocationAndPosition();
+		treeSplitPane.setDividerLocation(settings.getTreeWidth());
+		heapUsageBar.setVisible(settings.isShowHeapUsageBar());
 		setVisible(true);
-		setLocationRelativeTo(null);
-		setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+		setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+		addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowClosing(WindowEvent e) {
+				closeWindow();
+			}
+		});
 
+		processCommandLineArgs();
+	}
+
+	private void processCommandLineArgs() {
 		if (settings.getFiles().isEmpty()) {
-			openFile();
+			tabsController.selectTab(new StartPageNode());
 		} else {
-			openFile(new File(settings.getFiles().get(0)));
+			open(FileUtils.fileNamesToPaths(settings.getFiles()), this::handleSelectClassOption);
+		}
+	}
+
+	private void handleSelectClassOption() {
+		if (settings.getCmdSelectClass() != null) {
+			JavaNode javaNode = wrapper.searchJavaClassByFullAlias(settings.getCmdSelectClass());
+			if (javaNode == null) {
+				javaNode = wrapper.searchJavaClassByOrigClassName(settings.getCmdSelectClass());
+			}
+			if (javaNode == null) {
+				JOptionPane.showMessageDialog(this,
+						NLS.str("msg.cmd_select_class_error", settings.getCmdSelectClass()),
+						NLS.str("error_dialog.title"), JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+			tabsController.codeJump(cacheObject.getNodeCache().makeFrom(javaNode));
 		}
 	}
 
@@ -139,120 +322,518 @@ public class MainWindow extends JFrame {
 		if (!settings.isCheckForUpdates()) {
 			return;
 		}
-		JadxUpdate.check(new IUpdateCallback() {
-			@Override
-			public void onUpdate(final Release r) {
-				SwingUtilities.invokeLater(new Runnable() {
-					@Override
-					public void run() {
-						updateLink.setText(String.format(NLS.str("menu.update_label"), r.getName()));
-						updateLink.setVisible(true);
-					}
-				});
+		JadxUpdate.check(settings.getJadxUpdateChannel(), release -> SwingUtilities.invokeLater(() -> {
+			switch (settings.getJadxUpdateChannel()) {
+				case STABLE:
+					updateLink.setUrl(JadxUpdate.JADX_RELEASES_URL);
+					break;
+				case UNSTABLE:
+					updateLink.setUrl(JadxUpdate.JADX_ARTIFACTS_URL);
+					break;
 			}
-		});
+			updateLink.setText(NLS.str("menu.update_label", release.getName()));
+			updateLink.setVisible(true);
+		}));
 	}
 
-	public void openFile() {
-		JFileChooser fileChooser = new JFileChooser();
-		fileChooser.setAcceptAllFileFilterUsed(true);
-		String[] exts = {"apk", "dex", "jar", "class", "zip", "aar", "arsc"};
-		String description = "supported files: " + Arrays.toString(exts).replace('[', '(').replace(']', ')');
-		fileChooser.setFileFilter(new FileNameExtensionFilter(description, exts));
-		fileChooser.setToolTipText(NLS.str("file.open_action"));
-		String currentDirectory = settings.getLastOpenFilePath();
-		if (!currentDirectory.isEmpty()) {
-			fileChooser.setCurrentDirectory(new File(currentDirectory));
+	public void openFileDialog() {
+		showOpenDialog(FileOpenMode.OPEN);
+	}
+
+	public void openProjectDialog() {
+		showOpenDialog(FileOpenMode.OPEN_PROJECT);
+	}
+
+	private void showOpenDialog(FileOpenMode mode) {
+		saveAll();
+		if (!ensureProjectIsSaved()) {
+			return;
 		}
-		int ret = fileChooser.showDialog(mainPanel, NLS.str("file.open_title"));
-		if (ret == JFileChooser.APPROVE_OPTION) {
-			settings.setLastOpenFilePath(fileChooser.getCurrentDirectory().getPath());
-			openFile(fileChooser.getSelectedFile());
+		FileDialogWrapper fileDialog = new FileDialogWrapper(this, mode);
+		List<Path> openPaths = fileDialog.show();
+		if (!openPaths.isEmpty()) {
+			settings.setLastOpenFilePath(fileDialog.getCurrentDir());
+			open(openPaths);
 		}
 	}
 
-	public void openFile(File file) {
-		tabbedPane.closeAllTabs();
+	public void addFiles() {
+		FileDialogWrapper fileDialog = new FileDialogWrapper(this, FileOpenMode.ADD);
+		List<Path> addPaths = fileDialog.show();
+		if (!addPaths.isEmpty()) {
+			addFiles(addPaths);
+		}
+	}
+
+	public void addFiles(List<Path> addPaths) {
+		project.setFilePaths(ListUtils.distinctMergeSortedLists(addPaths, project.getFilePaths()));
+		reopen();
+	}
+
+	private void newProject() {
+		saveAll();
+		if (!ensureProjectIsSaved()) {
+			return;
+		}
+		closeAll();
+		updateProject(new JadxProject(this));
+	}
+
+	private void saveProject() {
+		saveOpenTabs();
+		if (!project.isSaveFileSelected()) {
+			saveProjectAs();
+		} else {
+			project.save();
+			update();
+		}
+	}
+
+	private void saveProjectAs() {
+		FileDialogWrapper fileDialog = new FileDialogWrapper(this, FileOpenMode.SAVE_PROJECT);
+		if (project.getFilePaths().size() == 1) {
+			// If there is only one file loaded we suggest saving the jadx project file next to the loaded file
+			Path projectPath = getProjectPathForFile(this.project.getFilePaths().get(0));
+			fileDialog.setSelectedFile(projectPath);
+		}
+		List<Path> saveFiles = fileDialog.show();
+		if (saveFiles.isEmpty()) {
+			return;
+		}
+		settings.setLastSaveProjectPath(fileDialog.getCurrentDir());
+		Path savePath = saveFiles.get(0);
+		if (!savePath.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(JadxProject.PROJECT_EXTENSION)) {
+			savePath = savePath.resolveSibling(savePath.getFileName() + "." + JadxProject.PROJECT_EXTENSION);
+		}
+		if (Files.exists(savePath)) {
+			int res = JOptionPane.showConfirmDialog(
+					this,
+					NLS.str("confirm.save_as_message", savePath.getFileName()),
+					NLS.str("confirm.save_as_title"),
+					JOptionPane.YES_NO_OPTION);
+			if (res == JOptionPane.NO_OPTION) {
+				return;
+			}
+		}
+		project.saveAs(savePath);
+		settings.addRecentProject(savePath);
+		update();
+	}
+
+	public void addNewScript() {
+		FileDialogWrapper fileDialog = new FileDialogWrapper(this, FileOpenMode.CUSTOM_SAVE);
+		fileDialog.setTitle(NLS.str("file.save"));
+		Path workingDir = project.getWorkingDir();
+		Path baseDir = workingDir != null ? workingDir : settings.getLastSaveFilePath();
+		fileDialog.setSelectedFile(baseDir.resolve("script.jadx.kts"));
+		fileDialog.setFileExtList(Collections.singletonList("jadx.kts"));
+		fileDialog.setSelectionMode(JFileChooser.FILES_ONLY);
+		List<Path> paths = fileDialog.show();
+		if (paths.size() != 1) {
+			return;
+		}
+		Path scriptFile = paths.get(0);
+		try {
+			TemplateFile tmpl = TemplateFile.fromResources("/files/script.jadx.kts.tmpl");
+			FileUtils.writeFile(scriptFile, tmpl.build());
+		} catch (Exception e) {
+			LOG.error("Failed to save new script file: {}", scriptFile, e);
+		}
+		List<Path> inputs = project.getFilePaths();
+		inputs.add(scriptFile);
+		project.setFilePaths(inputs);
+		project.save();
+		reopen();
+	}
+
+	public void removeInput(Path file) {
+		List<Path> inputs = project.getFilePaths();
+		inputs.remove(file);
+		project.setFilePaths(inputs);
+		project.save();
+		reopen();
+	}
+
+	public void open(Path path) {
+		open(Collections.singletonList(path), UiUtils.EMPTY_RUNNABLE);
+	}
+
+	public void open(List<Path> paths) {
+		open(paths, UiUtils.EMPTY_RUNNABLE);
+	}
+
+	private void open(List<Path> paths, Runnable onFinish) {
+		saveAll();
+		closeAll();
+		if (paths.size() == 1 && openSingleFile(paths.get(0), onFinish)) {
+			return;
+		}
+		// start new project
+		project = new JadxProject(this);
+		project.setFilePaths(paths);
+		loadFiles(onFinish);
+	}
+
+	private boolean openSingleFile(Path singleFile, Runnable onFinish) {
+		if (singleFile.getFileName() == null) {
+			return false;
+		}
+		String fileExtension = CommonFileUtils.getFileExtension(singleFile.getFileName().toString());
+		if (fileExtension != null && fileExtension.equalsIgnoreCase(JadxProject.PROJECT_EXTENSION)) {
+			openProject(singleFile, onFinish);
+			return true;
+		}
+		// check if project file already saved with default name
+		Path projectPath = getProjectPathForFile(singleFile);
+		if (Files.exists(projectPath)) {
+			openProject(projectPath, onFinish);
+			return true;
+		}
+		return false;
+	}
+
+	private static Path getProjectPathForFile(Path loadedFile) {
+		String fileName = loadedFile.getFileName() + "." + JadxProject.PROJECT_EXTENSION;
+		return loadedFile.resolveSibling(fileName);
+	}
+
+	public void reopen() {
+		synchronized (ReloadProject.EVENT) {
+			saveAll();
+			closeAll();
+			loadFiles(() -> {
+				menuBar.reloadShortcuts();
+				events().send(ReloadSettingsWindow.INSTANCE);
+			});
+		}
+	}
+
+	private void openProject(Path path, Runnable onFinish) {
+		LOG.debug("Loading project: {}", path);
+		JadxProject jadxProject = JadxProject.load(this, path);
+		if (jadxProject == null) {
+			JOptionPane.showMessageDialog(
+					this,
+					NLS.str("msg.project_error"),
+					NLS.str("msg.project_error_title"),
+					JOptionPane.INFORMATION_MESSAGE);
+			jadxProject = new JadxProject(this);
+		}
+		settings.addRecentProject(path);
+		project = jadxProject;
+		loadFiles(onFinish);
+	}
+
+	private void loadFiles(Runnable onFinish) {
+		if (project.getFilePaths().isEmpty()) {
+			tabsController.selectTab(new StartPageNode());
+			onFinish.run();
+			return;
+		}
+		AtomicReference<Exception> wrapperException = new AtomicReference<>();
+		backgroundExecutor.execute(NLS.str("progress.load"),
+				() -> {
+					try {
+						wrapper.open();
+					} catch (Exception e) {
+						wrapperException.set(e);
+					}
+				},
+				status -> {
+					if (wrapperException.get() != null) {
+						closeAll();
+						Exception e = wrapperException.get();
+						if (e instanceof RuntimeException) {
+							throw (RuntimeException) e;
+						} else {
+							throw new JadxRuntimeException("Project load error", e);
+						}
+					}
+					if (status == TaskStatus.CANCEL_BY_MEMORY) {
+						showHeapUsageBar();
+						UiUtils.errorMessage(this, NLS.str("message.memoryLow"));
+						return;
+					}
+					if (status != TaskStatus.COMPLETE) {
+						LOG.warn("Loading task incomplete, status: {}", status);
+						return;
+					}
+					checkLoadedStatus();
+					onOpen();
+					onFinish.run();
+				});
+	}
+
+	private void saveAll() {
+		saveOpenTabs();
+		BreakpointManager.saveAndExit();
+	}
+
+	private void closeAll() {
+		notifyLoadListeners(false);
+		cancelBackgroundJobs();
+		navController.reset();
+		tabbedPane.reset();
+		clearTree();
 		resetCache();
-		wrapper.openFile(file);
-		deobfToggleBtn.setSelected(settings.isDeobfuscationOn());
-		settings.addRecentFile(file.getAbsolutePath());
+		LogCollector.getInstance().reset();
+		wrapper.close();
+		tabsController.forceCloseAllTabs();
+		shortcutsController.reset();
+		UiUtils.resetClipboardOwner();
+		System.gc();
+		update();
+	}
+
+	private void checkLoadedStatus() {
+		if (!wrapper.getClasses().isEmpty()) {
+			return;
+		}
+		int errors = issuesPanel.getErrorsCount();
+		if (errors > 0) {
+			int result = JOptionPane.showConfirmDialog(this,
+					NLS.str("message.load_errors", errors),
+					NLS.str("message.errorTitle"),
+					JOptionPane.OK_CANCEL_OPTION,
+					JOptionPane.ERROR_MESSAGE);
+			if (result == JOptionPane.OK_OPTION) {
+				showLogViewer(LogOptions.allWithLevel(Level.ERROR));
+			}
+		} else {
+			UiUtils.showMessageBox(this, NLS.str("message.no_classes"));
+		}
+	}
+
+	private void onOpen() {
 		initTree();
-		setTitle(DEFAULT_TITLE + " - " + file.getName());
-		runBackgroundJobs();
+		updateLiveReload(project.isEnableLiveReload());
+		BreakpointManager.init(project.getFilePaths().get(0).toAbsolutePath().getParent());
+
+		List<EditorViewState> openTabs = project.getOpenTabs(this);
+		backgroundExecutor.execute(NLS.str("progress.load"),
+				() -> preLoadOpenTabs(openTabs),
+				status -> {
+					restoreOpenTabs(openTabs);
+					runInitialBackgroundJobs();
+					notifyLoadListeners(true);
+					update();
+				});
+	}
+
+	public void passesReloaded() {
+		tabbedPane.reloadInactiveTabs();
+		reloadTree();
+	}
+
+	private void initEvents() {
+		events().global().addListener(JadxEvents.RELOAD_PROJECT, ev -> UiUtils.uiRun(this::reopen));
+		RenameService.init(this);
+	}
+
+	public void updateLiveReload(boolean state) {
+		if (liveReloadWorker.isStarted() == state) {
+			return;
+		}
+		project.setEnableLiveReload(state);
+		liveReloadMenuItem.setEnabled(false);
+		backgroundExecutor.execute(
+				(state ? "Starting" : "Stopping") + " live reload",
+				() -> liveReloadWorker.updateState(state),
+				s -> {
+					liveReloadMenuItem.setState(state);
+					liveReloadMenuItem.setEnabled(true);
+				});
+	}
+
+	private void addTreeCustomNodes() {
+		treeRoot.replaceCustomNode(ApkSignature.getApkSignature(wrapper));
+		treeRoot.replaceCustomNode(new SummaryNode(this));
+	}
+
+	private boolean ensureProjectIsSaved() {
+		if (!project.isSaved() && !project.isInitial()) {
+			// Check if we saved settings that indicate what to do
+
+			if (settings.getSaveOption() == JadxSettings.SAVEOPTION.NEVER) {
+				return true;
+			}
+
+			if (settings.getSaveOption() == JadxSettings.SAVEOPTION.ALWAYS) {
+				saveProject();
+				return true;
+			}
+
+			JCheckBox remember = new JCheckBox(NLS.str("confirm.remember"));
+			JLabel message = new JLabel(NLS.str("confirm.not_saved_message"));
+
+			JPanel inner = new JPanel(new BorderLayout());
+			inner.add(remember, BorderLayout.SOUTH);
+			inner.add(message, BorderLayout.NORTH);
+
+			int res = JOptionPane.showConfirmDialog(
+					this,
+					inner,
+					NLS.str("confirm.not_saved_title"),
+					JOptionPane.YES_NO_CANCEL_OPTION);
+			if (res == JOptionPane.CANCEL_OPTION) {
+				return false;
+			}
+			if (res == JOptionPane.YES_OPTION) {
+				if (remember.isSelected()) {
+					settings.setSaveOption(JadxSettings.SAVEOPTION.ALWAYS);
+					settings.sync();
+				}
+				saveProject();
+			} else if (res == JOptionPane.NO_OPTION) {
+				if (remember.isSelected()) {
+					settings.setSaveOption(JadxSettings.SAVEOPTION.NEVER);
+					settings.sync();
+				}
+			}
+		}
+		return true;
+	}
+
+	public void updateProject(@NotNull JadxProject jadxProject) {
+		this.project = jadxProject;
+		UiUtils.uiRun(this::update);
+	}
+
+	public void update() {
+		UiUtils.uiThreadGuard();
+		newProjectAction.setEnabled(!project.isInitial());
+		saveProjectAction.setEnabled(loaded && !project.isSaved());
+		deobfToggleBtn.setSelected(settings.isDeobfuscationOn());
+		renameMappings.onUpdate(loaded);
+
+		Path projectPath = project.getProjectPath();
+		String pathString;
+		if (projectPath == null) {
+			pathString = "";
+		} else {
+			pathString = " [" + projectPath.toAbsolutePath().getParent() + ']';
+		}
+		setTitle((project.isSaved() ? "" : '*')
+				+ project.getName() + pathString + " - " + DEFAULT_TITLE);
 	}
 
 	protected void resetCache() {
 		cacheObject.reset();
-		// TODO: decompilation freezes sometime with several threads
-		int threadsCount = 1; // settings.getThreadsCount();
-		cacheObject.setDecompileJob(new DecompileJob(wrapper, threadsCount));
-		cacheObject.setIndexJob(new IndexJob(wrapper, cacheObject, threadsCount));
 	}
 
-	private synchronized void runBackgroundJobs() {
-		cancelBackgroundJobs();
-		backgroundWorker = new BackgroundWorker(cacheObject, progressPane);
+	synchronized void runInitialBackgroundJobs() {
 		if (settings.isAutoStartJobs()) {
 			new Timer().schedule(new TimerTask() {
 				@Override
 				public void run() {
-					backgroundWorker.exec();
+					requestFullDecompilation();
 				}
 			}, 1000);
 		}
 	}
 
-	public synchronized void cancelBackgroundJobs() {
-		if (backgroundWorker != null) {
-			backgroundWorker.stop();
-			backgroundWorker = new BackgroundWorker(cacheObject, progressPane);
-			resetCache();
+	public void requestFullDecompilation() {
+		if (cacheObject.isFullDecompilationFinished()) {
+			return;
 		}
+		backgroundExecutor.execute(new DecompileTask(this));
 	}
 
-	public void reOpenFile() {
-		File openedFile = wrapper.getOpenFile();
-		if (openedFile != null) {
-			openFile(openedFile);
-		}
+	public void resetCodeCache() {
+		backgroundExecutor.execute(
+				NLS.str("preferences.cache.task.delete"),
+				() -> {
+					try {
+						getWrapper().getCurrentDecompiler().ifPresent(jadx -> {
+							try {
+								jadx.getArgs().getCodeCache().close();
+							} catch (Exception e) {
+								LOG.error("Failed to close code cache", e);
+							}
+						});
+						Path cacheDir = project.getCacheDir();
+						project.resetCacheDir();
+						FileUtils.deleteDirIfExists(cacheDir);
+					} catch (Exception e) {
+						LOG.error("Error during code cache reset", e);
+					}
+				},
+				status -> events().send(ReloadProject.EVENT));
+	}
+
+	public void cancelBackgroundJobs() {
+		backgroundExecutor.cancelAll();
 	}
 
 	private void saveAll(boolean export) {
-		settings.setExportAsGradleProject(export);
+		FileDialogWrapper fileDialog = new FileDialogWrapper(this, FileOpenMode.EXPORT);
+		List<Path> saveDirs = fileDialog.show();
+		if (saveDirs.isEmpty()) {
+			return;
+		}
+		JadxArgs decompilerArgs = wrapper.getArgs();
+		decompilerArgs.setExportAsGradleProject(export);
 		if (export) {
-			settings.setSkipSources(false);
-			settings.setSkipResources(false);
+			decompilerArgs.setSkipSources(false);
+			decompilerArgs.setSkipResources(false);
+		} else {
+			decompilerArgs.setSkipSources(settings.isSkipSources());
+			decompilerArgs.setSkipResources(settings.isSkipResources());
 		}
-
-		JFileChooser fileChooser = new JFileChooser();
-		fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-		fileChooser.setToolTipText(NLS.str("file.save_all_msg"));
-
-		String currentDirectory = settings.getLastSaveFilePath();
-		if (!currentDirectory.isEmpty()) {
-			fileChooser.setCurrentDirectory(new File(currentDirectory));
-		}
-
-		int ret = fileChooser.showDialog(mainPanel, NLS.str("file.select"));
-		if (ret == JFileChooser.APPROVE_OPTION) {
-			settings.setLastSaveFilePath(fileChooser.getCurrentDirectory().getPath());
-			ProgressMonitor progressMonitor = new ProgressMonitor(mainPanel, NLS.str("msg.saving_sources"), "", 0, 100);
-			progressMonitor.setMillisToPopup(0);
-			wrapper.saveAll(fileChooser.getSelectedFile(), progressMonitor);
-		}
+		settings.setLastSaveFilePath(fileDialog.getCurrentDir());
+		backgroundExecutor.execute(new ExportTask(this, wrapper, saveDirs.get(0).toFile()));
 	}
 
-	private void initTree() {
+	public void initTree() {
 		treeRoot = new JRoot(wrapper);
 		treeRoot.setFlatPackages(isFlattenPackage);
 		treeModel.setRoot(treeRoot);
+		addTreeCustomNodes();
+		treeRoot.update();
 		reloadTree();
 	}
 
-	private void reloadTree() {
+	private void clearTree() {
+		treeRoot = null;
+		treeModel.setRoot(null);
 		treeModel.reload();
-		tree.expandRow(1);
+	}
+
+	public void reloadTree() {
+		treeReloading = true;
+		treeUpdateListener.forEach(listener -> listener.accept(treeRoot));
+
+		treeModel.reload();
+		List<String[]> treeExpansions = project.getTreeExpansions();
+		if (!treeExpansions.isEmpty()) {
+			expand(treeRoot, treeExpansions);
+		} else {
+			tree.expandRow(1);
+		}
+
+		treeReloading = false;
+	}
+
+	public void rebuildPackagesTree() {
+		cacheObject.setPackageHelper(null);
+		treeRoot.update();
+	}
+
+	private void expand(TreeNode node, List<String[]> treeExpansions) {
+		TreeNode[] pathNodes = treeModel.getPathToRoot(node);
+		if (pathNodes == null) {
+			return;
+		}
+		TreePath path = new TreePath(pathNodes);
+		for (String[] expansion : treeExpansions) {
+			if (Arrays.equals(expansion, getPathExpansion(path))) {
+				tree.expandPath(path);
+				break;
+			}
+		}
+		for (int i = node.getChildCount() - 1; i >= 0; i--) {
+			expand(node.getChildAt(i), treeExpansions);
+		}
 	}
 
 	private void toggleFlattenPackage() {
@@ -281,42 +862,57 @@ public class MainWindow extends JFrame {
 
 		deobfToggleBtn.setSelected(deobfOn);
 		deobfMenuItem.setState(deobfOn);
-		reOpenFile();
+		reopen();
 	}
 
-	private void treeClickAction() {
+	private boolean nodeClickAction(@Nullable Object obj) {
+		if (obj == null) {
+			return false;
+		}
 		try {
-			Object obj = tree.getLastSelectedPathComponent();
 			if (obj instanceof JResource) {
 				JResource res = (JResource) obj;
 				ResourceFile resFile = res.getResFile();
 				if (resFile != null && JResource.isSupportedForView(resFile.getType())) {
-					tabbedPane.showResource(res);
+					tabsController.selectTab(res);
+					return true;
 				}
-			} else if (obj instanceof JCertificate) {
-				JCertificate cert = (JCertificate) obj;
-				tabbedPane.showCertificate(cert);
 			} else if (obj instanceof JNode) {
-				JNode node = (JNode) obj;
-				JClass cls = node.getRootClass();
-				if (cls != null) {
-					tabbedPane.codeJump(new JumpPosition(cls, node.getLine()));
-				}
+				tabsController.codeJump((JNode) obj);
+				return true;
 			}
 		} catch (Exception e) {
 			LOG.error("Content loading error", e);
 		}
+		return false;
 	}
 
-	private void syncWithEditor() {
-		ContentPanel selectedContentPanel = tabbedPane.getSelectedCodePanel();
-		if (selectedContentPanel == null) {
+	private void treeRightClickAction(MouseEvent e) {
+		JNode node = getJNodeUnderMouse(e);
+		if (node == null) {
 			return;
 		}
-		JNode node = selectedContentPanel.getNode();
+		JPopupMenu menu = node.onTreePopupMenu(this);
+		if (menu != null) {
+			menu.show(e.getComponent(), e.getX(), e.getY());
+		}
+	}
+
+	@Nullable
+	private JNode getJNodeUnderMouse(MouseEvent mouseEvent) {
+		TreeNode treeNode = UiUtils.getTreeNodeUnderMouse(tree, mouseEvent);
+		if (treeNode instanceof JNode) {
+			return (JNode) treeNode;
+		}
+
+		return null;
+	}
+
+	// TODO: extract tree component into new class
+	public void selectNodeInTree(JNode node) {
 		if (node.getParent() == null && treeRoot != null) {
 			// node not register in tree
-			node = treeRoot.searchClassInTree(node);
+			node = treeRoot.searchNode(node);
 			if (node == null) {
 				LOG.error("Class not found in tree");
 				return;
@@ -333,95 +929,171 @@ public class MainWindow extends JFrame {
 		tree.requestFocus();
 	}
 
+	public void textSearch() {
+		ContentPanel panel = tabbedPane.getSelectedContentPanel();
+		if (panel instanceof AbstractCodeContentPanel) {
+			AbstractCodeArea codeArea = ((AbstractCodeContentPanel) panel).getCodeArea();
+			String preferText = codeArea.getSelectedText();
+			if (StringUtils.isEmpty(preferText)) {
+				preferText = codeArea.getWordUnderCaret();
+			}
+			if (!StringUtils.isEmpty(preferText)) {
+				SearchDialog.searchText(MainWindow.this, preferText);
+				return;
+			}
+		}
+		SearchDialog.search(MainWindow.this, SearchDialog.SearchPreset.TEXT);
+	}
+
+	public void goToMainActivity() {
+		AndroidManifestParser parser = new AndroidManifestParser(
+				AndroidManifestParser.getAndroidManifest(getWrapper().getResources()),
+				EnumSet.of(AppAttribute.MAIN_ACTIVITY),
+				getWrapper().getArgs().getSecurity());
+		if (!parser.isManifestFound()) {
+			JOptionPane.showMessageDialog(MainWindow.this,
+					NLS.str("error_dialog.not_found", "AndroidManifest.xml"),
+					NLS.str("error_dialog.title"),
+					JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		try {
+			ApplicationParams results = parser.parse();
+			if (results.getMainActivity() == null) {
+				throw new JadxRuntimeException("Failed to get main activity name from manifest");
+			}
+			JavaClass mainActivityClass = results.getMainActivityJavaClass(getWrapper().getDecompiler());
+			if (mainActivityClass == null) {
+				throw new JadxRuntimeException("Failed to find main activity class: " + results.getMainActivity());
+			}
+			tabsController.codeJump(getCacheObject().getNodeCache().makeFrom(mainActivityClass));
+		} catch (Exception e) {
+			LOG.error("Main activity not found", e);
+			JOptionPane.showMessageDialog(MainWindow.this,
+					NLS.str("error_dialog.not_found", "Main Activity"),
+					NLS.str("error_dialog.title"),
+					JOptionPane.ERROR_MESSAGE);
+		}
+	}
+
+	public void goToApplication() {
+		AndroidManifestParser parser = new AndroidManifestParser(
+				AndroidManifestParser.getAndroidManifest(getWrapper().getResources()),
+				EnumSet.of(AppAttribute.APPLICATION),
+				getWrapper().getArgs().getSecurity());
+		if (!parser.isManifestFound()) {
+			JOptionPane.showMessageDialog(MainWindow.this,
+					NLS.str("error_dialog.not_found", "AndroidManifest.xml"),
+					NLS.str("error_dialog.title"),
+					JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		try {
+			ApplicationParams results = parser.parse();
+			if (results.getApplication() == null) {
+				throw new JadxRuntimeException("Failed to get application from manifest");
+			}
+			JavaClass applicationClass = results.getApplicationJavaClass(getWrapper().getDecompiler());
+			if (applicationClass == null) {
+				throw new JadxRuntimeException("Failed to find application class: " + results.getApplication());
+			}
+			tabsController.codeJump(getCacheObject().getNodeCache().makeFrom(applicationClass));
+		} catch (Exception e) {
+			LOG.error("Application not found", e);
+			JOptionPane.showMessageDialog(MainWindow.this,
+					NLS.str("error_dialog.not_found", "Application"),
+					NLS.str("error_dialog.title"),
+					JOptionPane.ERROR_MESSAGE);
+		}
+	}
+
+	public void goToAndroidManifest() {
+		ResourceFile androidManifest = AndroidManifestParser.getAndroidManifest(getWrapper().getResources());
+		if (androidManifest == null) {
+			JOptionPane.showMessageDialog(MainWindow.this,
+					NLS.str("error_dialog.not_found", "AndroidManifest.xml"),
+					NLS.str("error_dialog.title"),
+					JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+
+		JResource res = new JResource(androidManifest, androidManifest.getDeobfName(), JResource.JResType.FILE);
+		tabsController.codeJump(res);
+	}
+
 	private void initMenuAndToolbar() {
-		Action openAction = new AbstractAction(NLS.str("file.open_action"), ICON_OPEN) {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				openFile();
-			}
-		};
-		openAction.putValue(Action.SHORT_DESCRIPTION, NLS.str("file.open_action"));
-		openAction.putValue(Action.ACCELERATOR_KEY, getKeyStroke(KeyEvent.VK_O, KeyEvent.CTRL_DOWN_MASK));
+		JadxGuiAction openAction = new JadxGuiAction(ActionModel.OPEN, this::openFileDialog);
+		JadxGuiAction openProject = new JadxGuiAction(ActionModel.OPEN_PROJECT, this::openProjectDialog);
 
-		Action saveAllAction = new AbstractAction(NLS.str("file.save_all"), ICON_SAVE_ALL) {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				saveAll(false);
-			}
-		};
-		saveAllAction.putValue(Action.SHORT_DESCRIPTION, NLS.str("file.save_all"));
-		saveAllAction.putValue(Action.ACCELERATOR_KEY, getKeyStroke(KeyEvent.VK_S, KeyEvent.CTRL_DOWN_MASK));
+		JadxGuiAction addFilesAction = new JadxGuiAction(ActionModel.ADD_FILES, () -> addFiles());
+		newProjectAction = new JadxGuiAction(ActionModel.NEW_PROJECT, this::newProject);
+		saveProjectAction = new JadxGuiAction(ActionModel.SAVE_PROJECT, this::saveProject);
+		JadxGuiAction saveProjectAsAction = new JadxGuiAction(ActionModel.SAVE_PROJECT_AS, this::saveProjectAs);
+		JadxGuiAction reloadAction = new JadxGuiAction(ActionModel.RELOAD, () -> UiUtils.uiRun(this::reopen));
+		JadxGuiAction liveReloadAction = new JadxGuiAction(ActionModel.LIVE_RELOAD,
+				() -> updateLiveReload(!project.isEnableLiveReload()));
 
-		Action exportAction = new AbstractAction(NLS.str("file.export_gradle"), ICON_EXPORT) {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				saveAll(true);
-			}
-		};
-		exportAction.putValue(Action.SHORT_DESCRIPTION, NLS.str("file.export_gradle"));
-		exportAction.putValue(Action.ACCELERATOR_KEY, getKeyStroke(KeyEvent.VK_E, KeyEvent.CTRL_DOWN_MASK));
+		liveReloadMenuItem = new JCheckBoxMenuItem(liveReloadAction);
+		liveReloadMenuItem.setState(project.isEnableLiveReload());
 
-		JMenu recentFiles = new JMenu(NLS.str("menu.recent_files"));
-		recentFiles.addMenuListener(new RecentFilesMenuListener(recentFiles));
+		JadxGuiAction saveAllAction = new JadxGuiAction(ActionModel.SAVE_ALL, () -> saveAll(false));
+		JadxGuiAction exportAction = new JadxGuiAction(ActionModel.EXPORT, () -> saveAll(true));
 
-		Action prefsAction = new AbstractAction(NLS.str("menu.preferences"), ICON_PREF) {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				new JadxSettingsWindow(MainWindow.this, settings).setVisible(true);
-			}
-		};
-		prefsAction.putValue(Action.SHORT_DESCRIPTION, NLS.str("menu.preferences"));
-		prefsAction.putValue(Action.ACCELERATOR_KEY, getKeyStroke(KeyEvent.VK_P,
-				KeyEvent.CTRL_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK));
+		JMenu recentProjects = new JadxMenu(NLS.str("menu.recent_projects"), shortcutsController);
+		recentProjects.addMenuListener(new RecentProjectsMenuListener(this, recentProjects));
 
-		Action exitAction = new AbstractAction(NLS.str("file.exit"), ICON_CLOSE) {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				dispose();
-			}
-		};
+		JadxGuiAction prefsAction = new JadxGuiAction(ActionModel.PREFS, this::openSettings);
+		JadxGuiAction exitAction = new JadxGuiAction(ActionModel.EXIT, this::closeWindow);
 
 		isFlattenPackage = settings.isFlattenPackage();
 		flatPkgMenuItem = new JCheckBoxMenuItem(NLS.str("menu.flatten"), ICON_FLAT_PKG);
 		flatPkgMenuItem.setState(isFlattenPackage);
 
-		Action syncAction = new AbstractAction(NLS.str("menu.sync"), ICON_SYNC) {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				syncWithEditor();
-			}
-		};
-		syncAction.putValue(Action.SHORT_DESCRIPTION, NLS.str("menu.sync"));
-		syncAction.putValue(Action.ACCELERATOR_KEY, getKeyStroke(KeyEvent.VK_T, KeyEvent.CTRL_DOWN_MASK));
+		JCheckBoxMenuItem heapUsageBarMenuItem = new JCheckBoxMenuItem(NLS.str("menu.heapUsageBar"));
+		heapUsageBarMenuItem.setState(settings.isShowHeapUsageBar());
+		heapUsageBarMenuItem.addActionListener(event -> {
+			settings.setShowHeapUsageBar(!settings.isShowHeapUsageBar());
+			heapUsageBar.setVisible(settings.isShowHeapUsageBar());
+		});
 
-		Action textSearchAction = new AbstractAction(NLS.str("menu.text_search"), ICON_SEARCH) {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				new SearchDialog(MainWindow.this, true).setVisible(true);
+		JCheckBoxMenuItem alwaysSelectOpened = new JCheckBoxMenuItem(NLS.str("menu.alwaysSelectOpened"));
+		alwaysSelectOpened.setState(settings.isAlwaysSelectOpened());
+		alwaysSelectOpened.addActionListener(event -> {
+			settings.setAlwaysSelectOpened(!settings.isAlwaysSelectOpened());
+			if (settings.isAlwaysSelectOpened()) {
+				this.editorSyncManager.sync();
 			}
-		};
-		textSearchAction.putValue(Action.SHORT_DESCRIPTION, NLS.str("menu.text_search"));
-		textSearchAction.putValue(Action.ACCELERATOR_KEY,
-				getKeyStroke(KeyEvent.VK_F, KeyEvent.CTRL_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK));
+		});
 
-		Action clsSearchAction = new AbstractAction(NLS.str("menu.class_search"), ICON_FIND) {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				new SearchDialog(MainWindow.this, false).setVisible(true);
-			}
-		};
-		clsSearchAction.putValue(Action.SHORT_DESCRIPTION, NLS.str("menu.class_search"));
-		clsSearchAction.putValue(Action.ACCELERATOR_KEY, getKeyStroke(KeyEvent.VK_N, KeyEvent.CTRL_DOWN_MASK));
+		JCheckBoxMenuItem dockLog = new JCheckBoxMenuItem(NLS.str("menu.dock_log"));
+		dockLog.setState(settings.isDockLogViewer());
+		dockLog.addActionListener(event -> settings.setDockLogViewer(!settings.isDockLogViewer()));
 
-		Action deobfAction = new AbstractAction(NLS.str("menu.deobfuscation"), ICON_DEOBF) {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				toggleDeobfuscation();
-			}
-		};
-		deobfAction.putValue(Action.SHORT_DESCRIPTION, NLS.str("preferences.deobfuscation"));
-		deobfAction.putValue(Action.ACCELERATOR_KEY,
-				getKeyStroke(KeyEvent.VK_D, KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK));
+		JCheckBoxMenuItem dockQuickTabs = new JCheckBoxMenuItem(NLS.str("menu.dock_quick_tabs"));
+		dockQuickTabs.setState(settings.isDockQuickTabs());
+		dockQuickTabs.addActionListener(event -> {
+			boolean visible = quickTabsTree == null;
+			setQuickTabsVisibility(visible);
+			settings.setDockQuickTabs(visible);
+		});
+		if (dockQuickTabs.getState()) {
+			setQuickTabsVisibility(true);
+		}
+
+		JadxGuiAction syncAction = new JadxGuiAction(ActionModel.SYNC, this.editorSyncManager::sync);
+		JadxGuiAction textSearchAction = new JadxGuiAction(ActionModel.TEXT_SEARCH, this::textSearch);
+		JadxGuiAction clsSearchAction = new JadxGuiAction(ActionModel.CLASS_SEARCH,
+				() -> SearchDialog.search(MainWindow.this, SearchDialog.SearchPreset.CLASS));
+		JadxGuiAction commentSearchAction = new JadxGuiAction(ActionModel.COMMENT_SEARCH,
+				() -> SearchDialog.search(MainWindow.this, SearchDialog.SearchPreset.COMMENT));
+		JadxGuiAction goToMainActivityAction = new JadxGuiAction(ActionModel.GO_TO_MAIN_ACTIVITY,
+				this::goToMainActivity);
+		JadxGuiAction goToApplicationAction = new JadxGuiAction(ActionModel.GO_TO_APPLICATION,
+				this::goToApplication);
+		JadxGuiAction goToAndroidManifestAction = new JadxGuiAction(ActionModel.GO_TO_ANDROID_MANIFEST, this::goToAndroidManifest);
+		JadxGuiAction decompileAllAction = new JadxGuiAction(ActionModel.DECOMPILE_ALL, this::requestFullDecompilation);
+		JadxGuiAction resetCacheAction = new JadxGuiAction(ActionModel.RESET_CACHE, this::resetCodeCache);
+		JadxGuiAction deobfAction = new JadxGuiAction(ActionModel.DEOBF, this::toggleDeobfuscation);
 
 		deobfToggleBtn = new JToggleButton(deobfAction);
 		deobfToggleBtn.setSelected(settings.isDeobfuscationOn());
@@ -430,82 +1102,96 @@ public class MainWindow extends JFrame {
 		deobfMenuItem = new JCheckBoxMenuItem(deobfAction);
 		deobfMenuItem.setState(settings.isDeobfuscationOn());
 
-		Action logAction = new AbstractAction(NLS.str("menu.log"), ICON_LOG) {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				new LogViewer(MainWindow.this).setVisible(true);
-			}
-		};
-		logAction.putValue(Action.SHORT_DESCRIPTION, NLS.str("menu.log"));
-		logAction.putValue(Action.ACCELERATOR_KEY, getKeyStroke(KeyEvent.VK_L,
-				KeyEvent.CTRL_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK));
+		JadxGuiAction showLogAction = new JadxGuiAction(ActionModel.SHOW_LOG,
+				() -> showLogViewer(LogOptions.current()));
+		JadxGuiAction aboutAction = new JadxGuiAction(ActionModel.ABOUT, () -> new AboutDialog().setVisible(true));
+		JadxGuiAction backAction = new JadxGuiAction(ActionModel.BACK, navController::navBack);
+		JadxGuiAction backVariantAction = new JadxGuiAction(ActionModel.BACK_V, navController::navBack);
+		JadxGuiAction forwardAction = new JadxGuiAction(ActionModel.FORWARD, navController::navForward);
+		JadxGuiAction forwardVariantAction = new JadxGuiAction(ActionModel.FORWARD_V, navController::navForward);
+		JadxGuiAction quarkAction = new JadxGuiAction(ActionModel.QUARK,
+				() -> new QuarkDialog(MainWindow.this).setVisible(true));
+		JadxGuiAction openDeviceAction = new JadxGuiAction(ActionModel.OPEN_DEVICE,
+				() -> new ADBDialog(MainWindow.this).setVisible(true));
 
-		Action aboutAction = new AbstractAction(NLS.str("menu.about")) {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				new AboutDialog().setVisible(true);
-			}
-		};
-
-		Action backAction = new AbstractAction(NLS.str("nav.back"), ICON_BACK) {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				tabbedPane.navBack();
-			}
-		};
-		backAction.putValue(Action.SHORT_DESCRIPTION, NLS.str("nav.back"));
-		backAction.putValue(Action.ACCELERATOR_KEY, getKeyStroke(KeyEvent.VK_LEFT,
-				KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK));
-
-		Action forwardAction = new AbstractAction(NLS.str("nav.forward"), ICON_FORWARD) {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				tabbedPane.navForward();
-			}
-		};
-		forwardAction.putValue(Action.SHORT_DESCRIPTION, NLS.str("nav.forward"));
-		forwardAction.putValue(Action.ACCELERATOR_KEY, getKeyStroke(KeyEvent.VK_RIGHT,
-				KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK));
-
-		JMenu file = new JMenu(NLS.str("menu.file"));
+		JMenu file = new JadxMenu(NLS.str("menu.file"), shortcutsController);
 		file.setMnemonic(KeyEvent.VK_F);
 		file.add(openAction);
+		file.add(openProject);
+		file.add(addFilesAction);
+		file.addSeparator();
+		file.add(newProjectAction);
+		file.add(saveProjectAction);
+		file.add(saveProjectAsAction);
+		file.addSeparator();
+		file.add(reloadAction);
+		file.add(liveReloadMenuItem);
+		renameMappings.addMenuActions(file);
+		file.addSeparator();
 		file.add(saveAllAction);
 		file.add(exportAction);
 		file.addSeparator();
-		file.add(recentFiles);
+		file.add(recentProjects);
 		file.addSeparator();
 		file.add(prefsAction);
 		file.addSeparator();
 		file.add(exitAction);
 
-		JMenu view = new JMenu(NLS.str("menu.view"));
+		JMenu view = new JadxMenu(NLS.str("menu.view"), shortcutsController);
 		view.setMnemonic(KeyEvent.VK_V);
 		view.add(flatPkgMenuItem);
 		view.add(syncAction);
+		view.add(heapUsageBarMenuItem);
+		view.add(alwaysSelectOpened);
+		view.add(dockLog);
+		view.add(dockQuickTabs);
 
-		JMenu nav = new JMenu(NLS.str("menu.navigation"));
+		JMenu nav = new JadxMenu(NLS.str("menu.navigation"), shortcutsController);
 		nav.setMnemonic(KeyEvent.VK_N);
 		nav.add(textSearchAction);
 		nav.add(clsSearchAction);
+		nav.add(commentSearchAction);
+		nav.add(goToMainActivityAction);
+		nav.add(goToApplicationAction);
+		nav.add(goToAndroidManifestAction);
 		nav.addSeparator();
 		nav.add(backAction);
 		nav.add(forwardAction);
 
-		JMenu tools = new JMenu(NLS.str("menu.tools"));
-		tools.setMnemonic(KeyEvent.VK_T);
-		tools.add(deobfMenuItem);
-		tools.add(logAction);
+		pluginsMenu = new JadxMenu(NLS.str("menu.plugins"), shortcutsController);
+		pluginsMenu.setMnemonic(KeyEvent.VK_P);
+		resetPluginsMenu();
 
-		JMenu help = new JMenu(NLS.str("menu.help"));
+		JMenu tools = new JadxMenu(NLS.str("menu.tools"), shortcutsController);
+		tools.setMnemonic(KeyEvent.VK_T);
+		tools.add(decompileAllAction);
+		tools.add(resetCacheAction);
+		tools.add(deobfMenuItem);
+		tools.add(quarkAction);
+		tools.add(openDeviceAction);
+
+		JMenu help = new JadxMenu(NLS.str("menu.help"), shortcutsController);
 		help.setMnemonic(KeyEvent.VK_H);
+		help.add(showLogAction);
+		if (Jadx.isDevVersion()) {
+			help.add(new AbstractAction("Show sample error report") {
+				@Override
+				public void actionPerformed(ActionEvent e) {
+					ExceptionDialog.throwTestException();
+				}
+			});
+			JCheckBoxMenuItem uiWatchDog = new JCheckBoxMenuItem(new ActionHandler("UI WatchDog", UIWatchDog::toggle));
+			uiWatchDog.setState(UIWatchDog.onStart());
+			help.add(uiWatchDog);
+		}
 		help.add(aboutAction);
 
-		JMenuBar menuBar = new JMenuBar();
+		menuBar = new JadxMenuBar();
 		menuBar.add(file);
 		menuBar.add(view);
 		menuBar.add(nav);
 		menuBar.add(tools);
+		menuBar.add(pluginsMenu);
 		menuBar.add(help);
 		setJMenuBar(menuBar);
 
@@ -516,12 +1202,16 @@ public class MainWindow extends JFrame {
 		flatPkgButton.addActionListener(flatPkgAction);
 		flatPkgButton.setToolTipText(NLS.str("menu.flatten"));
 
-		updateLink = new Link("", JadxUpdate.JADX_RELEASES_URL);
+		updateLink = new Link();
 		updateLink.setVisible(false);
 
 		JToolBar toolbar = new JToolBar();
 		toolbar.setFloatable(false);
 		toolbar.add(openAction);
+		toolbar.add(addFilesAction);
+		toolbar.addSeparator();
+		toolbar.add(reloadAction);
+		toolbar.addSeparator();
 		toolbar.add(saveAllAction);
 		toolbar.add(exportAction);
 		toolbar.addSeparator();
@@ -530,13 +1220,19 @@ public class MainWindow extends JFrame {
 		toolbar.addSeparator();
 		toolbar.add(textSearchAction);
 		toolbar.add(clsSearchAction);
+		toolbar.add(commentSearchAction);
+		toolbar.add(goToMainActivityAction);
+		toolbar.add(goToApplicationAction);
+		toolbar.add(goToAndroidManifestAction);
 		toolbar.addSeparator();
 		toolbar.add(backAction);
 		toolbar.add(forwardAction);
 		toolbar.addSeparator();
 		toolbar.add(deobfToggleBtn);
+		toolbar.add(quarkAction);
+		toolbar.add(openDeviceAction);
 		toolbar.addSeparator();
-		toolbar.add(logAction);
+		toolbar.add(showLogAction);
 		toolbar.addSeparator();
 		toolbar.add(prefsAction);
 		toolbar.addSeparator();
@@ -544,101 +1240,246 @@ public class MainWindow extends JFrame {
 		toolbar.add(updateLink);
 
 		mainPanel.add(toolbar, BorderLayout.NORTH);
+
+		nav.add(new HiddenMenuItem(backVariantAction));
+		nav.add(new HiddenMenuItem(forwardVariantAction));
+
+		shortcutsController.bind(backVariantAction);
+		shortcutsController.bind(forwardVariantAction);
+
+		addLoadListener(loaded -> {
+			textSearchAction.setEnabled(loaded);
+			clsSearchAction.setEnabled(loaded);
+			commentSearchAction.setEnabled(loaded);
+			goToMainActivityAction.setEnabled(loaded);
+			goToApplicationAction.setEnabled(loaded);
+			goToAndroidManifestAction.setEnabled(loaded);
+			backAction.setEnabled(loaded);
+			backVariantAction.setEnabled(loaded);
+			forwardAction.setEnabled(loaded);
+			forwardVariantAction.setEnabled(loaded);
+			syncAction.setEnabled(loaded);
+			saveAllAction.setEnabled(loaded);
+			exportAction.setEnabled(loaded);
+			saveProjectAsAction.setEnabled(loaded);
+			reloadAction.setEnabled(loaded);
+			decompileAllAction.setEnabled(loaded);
+			deobfAction.setEnabled(loaded);
+			quarkAction.setEnabled(loaded);
+			resetCacheAction.setEnabled(loaded);
+			return false;
+		});
 	}
 
 	private void initUI() {
+		setMinimumSize(new Dimension(200, 150));
 		mainPanel = new JPanel(new BorderLayout());
-		JSplitPane splitPane = new JSplitPane();
-		splitPane.setResizeWeight(SPLIT_PANE_RESIZE_WEIGHT);
-		mainPanel.add(splitPane);
+		treeSplitPane = new JSplitPane();
+		treeSplitPane.setResizeWeight(SPLIT_PANE_RESIZE_WEIGHT);
+		mainPanel.add(treeSplitPane);
 
 		DefaultMutableTreeNode treeRootNode = new DefaultMutableTreeNode(NLS.str("msg.open_file"));
 		treeModel = new DefaultTreeModel(treeRootNode);
 		tree = new JTree(treeModel);
+		ToolTipManager.sharedInstance().registerComponent(tree);
 		tree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
+		tree.setFocusable(false);
+		tree.addFocusListener(new FocusAdapter() {
+			@Override
+			public void focusLost(FocusEvent e) {
+				tree.setFocusable(false);
+			}
+		});
 		tree.addMouseListener(new MouseAdapter() {
 			@Override
-			public void mouseClicked(MouseEvent e) {
-				treeClickAction();
+			public void mousePressed(MouseEvent e) {
+				if (SwingUtilities.isLeftMouseButton(e)) {
+					if (!nodeClickAction(getJNodeUnderMouse(e))) {
+						// click ignored -> switch to focusable mode
+						tree.setFocusable(true);
+						tree.requestFocus();
+					}
+				} else if (SwingUtilities.isRightMouseButton(e)) {
+					treeRightClickAction(e);
+				}
 			}
 		});
 		tree.addKeyListener(new KeyAdapter() {
 			@Override
 			public void keyPressed(KeyEvent e) {
 				if (e.getKeyCode() == KeyEvent.VK_ENTER) {
-					treeClickAction();
+					nodeClickAction(tree.getLastSelectedPathComponent());
 				}
 			}
 		});
 		tree.setCellRenderer(new DefaultTreeCellRenderer() {
 			@Override
 			public Component getTreeCellRendererComponent(JTree tree,
-			                                              Object value, boolean selected, boolean expanded,
-			                                              boolean isLeaf, int row, boolean focused) {
+					Object value, boolean selected, boolean expanded,
+					boolean isLeaf, int row, boolean focused) {
 				Component c = super.getTreeCellRendererComponent(tree, value, selected, expanded, isLeaf, row, focused);
 				if (value instanceof JNode) {
-					setIcon(((JNode) value).getIcon());
+					JNode jNode = (JNode) value;
+					NodeLabel.disableHtml(this, jNode.disableHtml());
+					setText(jNode.makeStringHtml());
+					setIcon(jNode.getIcon());
+					setToolTipText(jNode.getTooltip());
+				} else {
+					setToolTipText(null);
+				}
+				if (value instanceof JPackage) {
+					setEnabled(((JPackage) value).isEnabled());
 				}
 				return c;
 			}
 		});
 		tree.addTreeWillExpandListener(new TreeWillExpandListener() {
 			@Override
-			public void treeWillExpand(TreeExpansionEvent event) throws ExpandVetoException {
+			public void treeWillExpand(TreeExpansionEvent event) {
 				TreePath path = event.getPath();
 				Object node = path.getLastPathComponent();
 				if (node instanceof JLoadableNode) {
-					((JLoadableNode) node).loadNode();
+					JLoadableNode treeNode = (JLoadableNode) node;
+					backgroundExecutor.execute(treeNode.getLoadTask());
+					// schedule update for expanded nodes in a tree
+					backgroundExecutor.execute(NLS.str("progress.load"),
+							UiUtils.EMPTY_RUNNABLE,
+							status -> {
+								if (!treeReloading) {
+									treeModel.nodeStructureChanged(treeNode);
+									project.addTreeExpansion(getPathExpansion(event.getPath()));
+								}
+							});
+				} else {
+					if (!treeReloading) {
+						project.addTreeExpansion(getPathExpansion(event.getPath()));
+					}
 				}
 			}
 
 			@Override
-			public void treeWillCollapse(TreeExpansionEvent event) throws ExpandVetoException {
+			public void treeWillCollapse(TreeExpansionEvent event) {
+				if (!treeReloading) {
+					project.removeTreeExpansion(getPathExpansion(event.getPath()));
+					update();
+				}
 			}
 		});
 
 		progressPane = new ProgressPanel(this, true);
+		issuesPanel = new IssuesPanel(this);
 
 		JPanel leftPane = new JPanel(new BorderLayout());
-		leftPane.add(new JScrollPane(tree), BorderLayout.CENTER);
-		leftPane.add(progressPane, BorderLayout.PAGE_END);
-		splitPane.setLeftComponent(leftPane);
+		JScrollPane treeScrollPane = new JScrollPane(tree);
+		treeScrollPane.setMinimumSize(new Dimension(100, 150));
 
-		tabbedPane = new TabbedPane(this);
-		splitPane.setRightComponent(tabbedPane);
+		JPanel bottomPane = new JPanel(new BorderLayout());
+		bottomPane.add(issuesPanel, BorderLayout.PAGE_START);
+		bottomPane.add(progressPane, BorderLayout.PAGE_END);
+
+		leftPane.add(treeScrollPane, BorderLayout.CENTER);
+		leftPane.add(bottomPane, BorderLayout.PAGE_END);
+		treeSplitPane.setLeftComponent(leftPane);
+
+		tabbedPane = new TabbedPane(this, tabsController);
+		tabbedPane.setMinimumSize(new Dimension(150, 150));
+		new TabDndController(tabbedPane, settings);
+
+		quickTabsAndCodeSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+		quickTabsAndCodeSplitPane.setResizeWeight(0.15);
+		quickTabsAndCodeSplitPane.setDividerSize(0);
+		quickTabsAndCodeSplitPane.setRightComponent(tabbedPane);
+
+		rightSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
+		rightSplitPane.setTopComponent(quickTabsAndCodeSplitPane);
+		rightSplitPane.setResizeWeight(SPLIT_PANE_RESIZE_WEIGHT);
+
+		treeSplitPane.setRightComponent(rightSplitPane);
 
 		new DropTarget(this, DnDConstants.ACTION_COPY, new MainDropTarget(this));
 
+		heapUsageBar = new HeapUsageBar();
+		mainPanel.add(heapUsageBar, BorderLayout.SOUTH);
+
+		bottomSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
+		bottomSplitPane.setTopComponent(treeSplitPane);
+		bottomSplitPane.setResizeWeight(SPLIT_PANE_RESIZE_WEIGHT);
+
+		mainPanel.add(bottomSplitPane, BorderLayout.CENTER);
 		setContentPane(mainPanel);
 		setTitle(DEFAULT_TITLE);
 	}
 
+	private static String[] getPathExpansion(TreePath path) {
+		List<String> pathList = new ArrayList<>();
+		while (path != null) {
+			Object node = path.getLastPathComponent();
+			String name;
+			if (node instanceof JClass) {
+				name = ((JClass) node).getCls().getClassNode().getClassInfo().getFullName();
+			} else {
+				name = node.toString();
+			}
+			pathList.add(name);
+			path = path.getParentPath();
+		}
+		return pathList.toArray(new String[0]);
+	}
+
+	public static void getExpandedPaths(JTree tree, TreePath path, List<TreePath> list) {
+		if (tree.isExpanded(path)) {
+			list.add(path);
+
+			TreeNode node = (TreeNode) path.getLastPathComponent();
+			for (int i = node.getChildCount() - 1; i >= 0; i--) {
+				TreeNode n = node.getChildAt(i);
+				TreePath child = path.pathByAddingChild(n);
+				getExpandedPaths(tree, child, list);
+			}
+		}
+	}
+
 	public void setLocationAndPosition() {
-		if (this.settings.loadWindowPos(this)) {
+		if (settings.loadWindowPos(this)) {
 			return;
 		}
 		GraphicsDevice gd = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
 		DisplayMode mode = gd.getDisplayMode();
-		int w = mode.getWidth();
-		int h = mode.getHeight();
-		setLocation((int) (w * BORDER_RATIO), (int) (h * BORDER_RATIO));
-		setSize((int) (w * WINDOW_RATIO), (int) (h * WINDOW_RATIO));
+		AffineTransform trans = gd.getDefaultConfiguration().getDefaultTransform();
+		int w = (int) (mode.getWidth() / trans.getScaleX());
+		int h = (int) (mode.getHeight() / trans.getScaleY());
+		setBounds((int) (w * BORDER_RATIO), (int) (h * BORDER_RATIO),
+				(int) (w * WINDOW_RATIO), (int) (h * WINDOW_RATIO));
+		setLocationRelativeTo(null);
 	}
 
-	public void updateFont(Font font) {
-		setFont(font);
-	}
-
-	public void setEditorTheme(String editorThemePath) {
+	private void setEditorTheme(String editorThemePath) {
 		try {
-			editorTheme = Theme.load(getClass().getResourceAsStream(editorThemePath));
-		} catch (Exception e) {
-			LOG.error("Can't load editor theme from classpath: {}", editorThemePath);
-			try {
-				editorTheme = Theme.load(new FileInputStream(editorThemePath));
-			} catch (Exception e2) {
-				LOG.error("Can't load editor theme from file: {}", editorThemePath);
+			URL themeUrl = getClass().getResource(editorThemePath);
+			if (themeUrl != null) {
+				try (InputStream is = themeUrl.openStream()) {
+					editorTheme = Theme.load(is);
+					return;
+				}
 			}
+			Path themePath = Paths.get(editorThemePath);
+			if (Files.isRegularFile(themePath)) {
+				try (InputStream is = Files.newInputStream(themePath)) {
+					editorTheme = Theme.load(is);
+					return;
+				}
+			}
+		} catch (Exception e) {
+			LOG.error("Failed to load editor theme: {}", editorThemePath, e);
+		}
+		LOG.warn("Falling back to default editor theme: {}", editorThemePath);
+		editorThemePath = EditorTheme.getDefaultTheme().getPath();
+		try (InputStream is = getClass().getResourceAsStream(editorThemePath)) {
+			editorTheme = Theme.load(is);
+			return;
+		} catch (Exception e) {
+			LOG.error("Failed to load default editor theme: {}", editorThemePath, e);
+			editorTheme = new Theme(new RSyntaxTextArea());
 		}
 	}
 
@@ -646,23 +1487,139 @@ public class MainWindow extends JFrame {
 		return editorTheme;
 	}
 
-	public void loadSettings() {
-		tabbedPane.loadSettings();
+	private void openSettings() {
+		settingsOpen = true;
+
+		JDialog settingsWindow = new JadxSettingsWindow(MainWindow.this, settings);
+		settingsWindow.setVisible(true);
+		settingsWindow.addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowClosed(WindowEvent e) {
+				settingsOpen = false;
+			}
+		});
 	}
 
-	@Override
-	public void dispose() {
+	public boolean isSettingsOpen() {
+		return settingsOpen;
+	}
+
+	public void loadSettings() {
+		// queue update to not interrupt current UI tasks
+		UiUtils.uiRun(this::updateUiSettings);
+	}
+
+	private void updateUiSettings() {
+		LafManager.updateLaf(settings);
+
+		Font font = settings.getFont();
+		Font largerFont = font.deriveFont(font.getSize() + 2.f);
+
+		setFont(largerFont);
+		setEditorTheme(settings.getEditorThemePath());
+		tree.setFont(largerFont);
+		tree.setRowHeight(-1);
+
+		tabbedPane.loadSettings();
+		if (logPanel != null) {
+			logPanel.loadSettings();
+		}
+		if (quickTabsTree != null) {
+			quickTabsTree.loadSettings();
+		}
+
+		shortcutsController.loadSettings();
+	}
+
+	private void closeWindow() {
+		saveAll();
+		if (!ensureProjectIsSaved()) {
+			return;
+		}
+		settings.setTreeWidth(treeSplitPane.getDividerLocation());
 		settings.saveWindowPos(this);
-		cancelBackgroundJobs();
-		super.dispose();
+		settings.setMainWindowExtendedState(getExtendedState());
+		if (debuggerPanel != null) {
+			saveSplittersInfo();
+		}
+		heapUsageBar.reset();
+		closeAll();
+
+		dispose();
+		System.exit(0);
+	}
+
+	private void saveOpenTabs() {
+		project.saveOpenTabs(tabsController.getEditorViewStates());
+	}
+
+	private void restoreOpenTabs(List<EditorViewState> openTabs) {
+		UiUtils.uiThreadGuard();
+		if (openTabs.isEmpty()) {
+			return;
+		}
+		for (EditorViewState viewState : openTabs) {
+			tabsController.restoreEditorViewState(viewState);
+		}
+		tabsController.notifyRestoreEditorViewStateDone();
+	}
+
+	private void preLoadOpenTabs(List<EditorViewState> openTabs) {
+		UiUtils.notUiThreadGuard();
+		for (EditorViewState tabState : openTabs) {
+			if (tabState.isHidden()) {
+				continue;
+			}
+			JNode node = tabState.getNode();
+			try {
+				node.getCodeInfo();
+			} catch (Exception e) {
+				LOG.warn("Failed to preload code for node: {}", node, e);
+			}
+		}
+	}
+
+	private void saveSplittersInfo() {
+		settings.setMainWindowVerticalSplitterLoc(bottomSplitPane.getDividerLocation());
+		if (debuggerPanel != null) {
+			settings.setDebuggerStackFrameSplitterLoc(debuggerPanel.getLeftSplitterLocation());
+			settings.setDebuggerVarTreeSplitterLoc(debuggerPanel.getRightSplitterLocation());
+		}
+	}
+
+	public void addLoadListener(ILoadListener loadListener) {
+		this.loadListeners.add(loadListener);
+		// set initial value
+		loadListener.update(loaded);
+	}
+
+	public void notifyLoadListeners(boolean loaded) {
+		this.loaded = loaded;
+		loadListeners.removeIf(listener -> listener.update(loaded));
+	}
+
+	public void addTreeUpdateListener(Consumer<JRoot> listener) {
+		treeUpdateListener.add(listener);
 	}
 
 	public JadxWrapper getWrapper() {
 		return wrapper;
 	}
 
+	public JadxProject getProject() {
+		return project;
+	}
+
 	public TabbedPane getTabbedPane() {
 		return tabbedPane;
+	}
+
+	public TabsController getTabsController() {
+		return tabsController;
+	}
+
+	public NavigationController getNavController() {
+		return navController;
 	}
 
 	public JadxSettings getSettings() {
@@ -673,41 +1630,131 @@ public class MainWindow extends JFrame {
 		return cacheObject;
 	}
 
-	public BackgroundWorker getBackgroundWorker() {
-		return backgroundWorker;
+	public BackgroundExecutor getBackgroundExecutor() {
+		return backgroundExecutor;
 	}
 
-	private class RecentFilesMenuListener implements MenuListener {
-		private final JMenu recentFiles;
+	public JRoot getTreeRoot() {
+		return treeRoot;
+	}
 
-		public RecentFilesMenuListener(JMenu recentFiles) {
-			this.recentFiles = recentFiles;
+	public JDebuggerPanel getDebuggerPanel() {
+		initDebuggerPanel();
+		return debuggerPanel;
+	}
+
+	public ShortcutsController getShortcutsController() {
+		return shortcutsController;
+	}
+
+	public void showDebuggerPanel() {
+		initDebuggerPanel();
+	}
+
+	public void destroyDebuggerPanel() {
+		saveSplittersInfo();
+		if (debuggerPanel != null) {
+			debuggerPanel.setVisible(false);
+			debuggerPanel = null;
 		}
+	}
 
-		@Override
-		public void menuSelected(MenuEvent menuEvent) {
-			recentFiles.removeAll();
-			File openFile = wrapper.getOpenFile();
-			String currentFile = openFile == null ? "" : openFile.getAbsolutePath();
-			for (final String file : settings.getRecentFiles()) {
-				if (file.equals(currentFile)) {
-					continue;
-				}
-				JMenuItem menuItem = new JMenuItem(file);
-				recentFiles.add(menuItem);
-				menuItem.addActionListener(e -> openFile(new File(file)));
+	public void showHeapUsageBar() {
+		settings.setShowHeapUsageBar(true);
+		heapUsageBar.setVisible(true);
+	}
+
+	private void initDebuggerPanel() {
+		if (debuggerPanel == null) {
+			debuggerPanel = new JDebuggerPanel(this);
+			debuggerPanel.loadSettings();
+			bottomSplitPane.setBottomComponent(debuggerPanel);
+			int loc = settings.getMainWindowVerticalSplitterLoc();
+			if (loc == 0) {
+				loc = 300;
 			}
-			if (recentFiles.getItemCount() == 0) {
-				recentFiles.add(new JMenuItem(NLS.str("menu.no_recent_files")));
+			bottomSplitPane.setDividerLocation(loc);
+		}
+	}
+
+	public void showLogViewer(LogOptions logOptions) {
+		UiUtils.uiRun(() -> {
+			if (settings.isDockLogViewer()) {
+				showDockedLog(logOptions);
+			} else {
+				LogViewerDialog.open(this, logOptions);
+			}
+		});
+	}
+
+	private void showDockedLog(LogOptions logOptions) {
+		if (logPanel != null) {
+			logPanel.applyLogOptions(logOptions);
+			return;
+		}
+		Runnable undock = () -> {
+			hideDockedLog();
+			settings.setDockLogViewer(false);
+			LogViewerDialog.open(this, logOptions);
+		};
+		logPanel = new LogPanel(this, logOptions, undock, this::hideDockedLog);
+		rightSplitPane.setBottomComponent(logPanel);
+	}
+
+	private void hideDockedLog() {
+		if (logPanel == null) {
+			return;
+		}
+		logPanel.dispose();
+		logPanel = null;
+		rightSplitPane.setBottomComponent(null);
+	}
+
+	private void setQuickTabsVisibility(boolean visible) {
+		if (visible) {
+			if (quickTabsTree == null) {
+				quickTabsTree = new QuickTabsTree(this);
+			}
+
+			quickTabsAndCodeSplitPane.setLeftComponent(quickTabsTree);
+			quickTabsAndCodeSplitPane.setDividerSize(5);
+		} else {
+			quickTabsAndCodeSplitPane.setLeftComponent(null);
+			quickTabsAndCodeSplitPane.setDividerSize(0);
+
+			if (quickTabsTree != null) {
+				quickTabsTree.dispose();
+				quickTabsTree = null;
 			}
 		}
+	}
 
-		@Override
-		public void menuDeselected(MenuEvent e) {
-		}
+	public JMenu getPluginsMenu() {
+		return pluginsMenu;
+	}
 
-		@Override
-		public void menuCanceled(MenuEvent e) {
+	public void resetPluginsMenu() {
+		pluginsMenu.removeAll();
+		pluginsMenu.add(new ActionHandler(() -> new PluginSettings(this, settings).addPlugin())
+				.withNameAndDesc(NLS.str("preferences.plugins.install")));
+	}
+
+	public void addToPluginsMenu(Action item) {
+		if (pluginsMenu.getMenuComponentCount() == 1) {
+			pluginsMenu.addSeparator();
 		}
+		pluginsMenu.add(item);
+	}
+
+	public RenameMappingsGui getRenameMappings() {
+		return renameMappings;
+	}
+
+	public CacheManager getCacheManager() {
+		return cacheManager;
+	}
+
+	public JadxGuiEventsImpl events() {
+		return events;
 	}
 }

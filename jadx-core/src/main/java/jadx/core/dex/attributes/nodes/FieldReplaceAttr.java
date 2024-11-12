@@ -1,11 +1,11 @@
 package jadx.core.dex.attributes.nodes;
 
+import jadx.api.plugins.input.data.attributes.PinnedAttribute;
 import jadx.core.dex.attributes.AType;
-import jadx.core.dex.attributes.IAttribute;
 import jadx.core.dex.info.ClassInfo;
 import jadx.core.dex.instructions.args.InsnArg;
 
-public class FieldReplaceAttr implements IAttribute {
+public class FieldReplaceAttr extends PinnedAttribute {
 
 	public enum ReplaceWith {
 		CLASS_INSTANCE,
@@ -38,12 +38,12 @@ public class FieldReplaceAttr implements IAttribute {
 	}
 
 	@Override
-	public AType<FieldReplaceAttr> getType() {
+	public AType<FieldReplaceAttr> getAttrType() {
 		return AType.FIELD_REPLACE;
 	}
 
 	@Override
 	public String toString() {
-		return "REPLACE: " + replaceType + " " + replaceObj;
+		return "REPLACE: " + replaceType + ' ' + replaceObj;
 	}
 }

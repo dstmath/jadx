@@ -1,5 +1,7 @@
 package jadx.gui.ui.codearea;
 
+import java.util.Set;
+
 import javax.swing.text.Segment;
 
 import org.fife.ui.rsyntaxtextarea.Token;
@@ -13,30 +15,33 @@ import org.slf4j.LoggerFactory;
 
 import jadx.api.JavaClass;
 import jadx.api.JavaNode;
-import jadx.gui.treemodel.JClass;
+
+import static jadx.api.plugins.utils.Utils.constSet;
 
 public final class JadxTokenMaker extends JavaTokenMaker {
 	private static final Logger LOG = LoggerFactory.getLogger(JadxTokenMaker.class);
 
 	private final CodeArea codeArea;
-	private final JClass jCls;
 
-	public JadxTokenMaker(CodeArea codeArea, JClass jCls) {
+	public JadxTokenMaker(CodeArea codeArea) {
 		this.codeArea = codeArea;
-		this.jCls = jCls;
 	}
 
 	@Override
 	public Token getTokenList(Segment text, int initialTokenType, int startOffset) {
-		Token tokens = super.getTokenList(text, initialTokenType, startOffset);
-		if (startOffset > 0 && tokens.getType() != TokenTypes.NULL) {
-			try {
-				processTokens(tokens);
-			} catch (Exception e) {
-				LOG.error("Process tokens failed for text: {}", text, e);
-			}
+		if (codeArea.isDisposed()) {
+			return new TokenImpl();
 		}
-		return tokens;
+		try {
+			Token tokens = super.getTokenList(text, initialTokenType, startOffset);
+			if (tokens != null && tokens.getType() != TokenTypes.NULL) {
+				processTokens(tokens);
+			}
+			return tokens;
+		} catch (Throwable e) { // JavaTokenMaker throws 'java.lang.Error' if failed to parse input string
+			LOG.error("Process tokens failed for text: {}", text, e);
+			return new TokenImpl();
+		}
 	}
 
 	private void processTokens(Token tokens) {
@@ -44,11 +49,18 @@ public final class JadxTokenMaker extends JavaTokenMaker {
 		Token current = tokens;
 		while (current != null) {
 			if (prev != null) {
-				int tokenType = current.getType();
-				if (tokenType == TokenTypes.IDENTIFIER) {
-					current = mergeLongClassNames(prev, current, false);
-				} else if (tokenType == TokenTypes.ANNOTATION) {
-					current = mergeLongClassNames(prev, current, true);
+				switch (current.getType()) {
+					case TokenTypes.RESERVED_WORD:
+						fixContextualKeyword(current);
+						break;
+
+					case TokenTypes.IDENTIFIER:
+						current = mergeLongClassNames(prev, current, false);
+						break;
+
+					case TokenTypes.ANNOTATION:
+						current = mergeLongClassNames(prev, current, true);
+						break;
 				}
 			}
 			prev = current;
@@ -56,20 +68,31 @@ public final class JadxTokenMaker extends JavaTokenMaker {
 		}
 	}
 
+	private static final Set<String> CONTEXTUAL_KEYWORDS = constSet(
+			"exports", "module", "non-sealed", "open", "opens", "permits", "provides", "record",
+			"requires", "sealed", "to", "transitive", "uses", "var", "with", "yield");
+
+	private static void fixContextualKeyword(Token token) {
+		String lexeme = token.getLexeme(); // TODO: create new string every call, better to avoid
+		if (lexeme != null && CONTEXTUAL_KEYWORDS.contains(lexeme)) {
+			token.setType(TokenTypes.IDENTIFIER);
+		}
+	}
+
 	@NotNull
 	private Token mergeLongClassNames(Token prev, Token current, boolean annotation) {
-		int offset = current.getOffset();
+		int offset = current.getTextOffset();
 		if (annotation) {
 			offset++;
 		}
-		JavaNode javaNode = codeArea.getJavaNodeAtOffset(jCls, offset);
-		if (javaNode instanceof JavaClass) {
-			String name = javaNode.getName();
+		JavaClass javaCls = codeArea.getJavaClassIfAtPos(offset);
+		if (javaCls != null) {
+			String name = javaCls.getName();
 			String lexeme = current.getLexeme();
 			if (annotation && lexeme.length() > 1) {
 				lexeme = lexeme.substring(1);
 			}
-			if (!lexeme.equals(name) && javaNode.getFullName().startsWith(lexeme)) {
+			if (!lexeme.equals(name) && isClassNameStart(javaCls, lexeme)) {
 				// try to replace long class name with one token
 				Token replace = concatTokensUntil(current, name);
 				if (replace != null && prev instanceof TokenImpl) {
@@ -80,6 +103,18 @@ public final class JadxTokenMaker extends JavaTokenMaker {
 			}
 		}
 		return current;
+	}
+
+	private boolean isClassNameStart(JavaNode javaNode, String lexeme) {
+		if (javaNode.getFullName().startsWith(lexeme)) {
+			// full class name
+			return true;
+		}
+		if (javaNode.getTopParentClass().getName().startsWith(lexeme)) {
+			// inner class references from parent class
+			return true;
+		}
+		return false;
 	}
 
 	@Nullable

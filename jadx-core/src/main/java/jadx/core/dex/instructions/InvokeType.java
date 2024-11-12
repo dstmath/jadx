@@ -6,4 +6,7 @@ public enum InvokeType {
 	VIRTUAL,
 	INTERFACE,
 	SUPER,
+	POLYMORPHIC,
+	CUSTOM,
+	CUSTOM_RAW,
 }

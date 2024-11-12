@@ -1,41 +1,39 @@
 package jadx.core.xmlgen;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Set;
 
-import jadx.core.dex.nodes.ClassNode;
+import org.jetbrains.annotations.Nullable;
+
+import jadx.core.dex.info.ClassInfo;
+import jadx.core.dex.instructions.args.ArgType;
 import jadx.core.dex.nodes.RootNode;
 
 /*
- * modifies android:name attributes and xml tags which are old class names
- * but were changed during deobfuscation
+ * Modifies android:name attributes and xml tags which were changed during deobfuscation
  */
 public class XmlDeobf {
-	private static final Map<String, String> deobfMap = new HashMap<>();
 
-	private XmlDeobf() {}
-
-	public static String deobfClassName(RootNode rootNode, String potencialClassName,
-	                                    String packageName) {
-
-		if (packageName != null && potencialClassName.startsWith(".")) {
-			potencialClassName = packageName + potencialClassName;
-		}
-		return getNewClassName(rootNode, potencialClassName);
+	private XmlDeobf() {
 	}
 
-	private static String getNewClassName(RootNode rootNode, String old) {
-		if (deobfMap.isEmpty()) {
-			for (ClassNode classNode : rootNode.getClasses(true)) {
-				if (classNode.getAlias() != null) {
-					String oldName = classNode.getClassInfo().getFullName();
-					String newName = classNode.getAlias().getFullName();
-					if (!oldName.equals(newName)) {
-						deobfMap.put(oldName, newName);
-					}
-				}
-			}
+	@Nullable
+	public static String deobfClassName(RootNode root, String potentialClassName, String packageName) {
+		if (potentialClassName.indexOf('.') == -1) {
+			return null;
 		}
-		return deobfMap.get(old);
+		if (packageName != null && potentialClassName.startsWith(".")) {
+			potentialClassName = packageName + potentialClassName;
+		}
+		ArgType clsType = ArgType.object(potentialClassName);
+		ClassInfo classInfo = root.getInfoStorage().getCls(clsType);
+		if (classInfo == null) {
+			// unknown class reference
+			return null;
+		}
+		return classInfo.getAliasFullName();
+	}
+
+	public static boolean isDuplicatedAttr(String attrFullName, Set<String> attrCache) {
+		return !attrCache.add(attrFullName);
 	}
 }
